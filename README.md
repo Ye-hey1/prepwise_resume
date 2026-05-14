@@ -7,7 +7,6 @@
 - `JD分析`
 - `面试题库`
 - `AI面试`
-体验地址：prepwise-wine-tau.vercel.app
 ## 核心能力
 
 ### 1) 简历编辑

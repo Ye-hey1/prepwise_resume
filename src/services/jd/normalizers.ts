@@ -366,7 +366,7 @@ export function normalizeCompanyIntel(raw: unknown): CompanyIntelData {
   const sourceDetails = Array.isArray(source.sourceDetails ?? source.source_details)
     ? (source.sourceDetails ?? source.source_details) as unknown[]
     : []
-  const normalizedSources = normalizeTextList(source.sources, 8)
+  const normalizedSources = normalizeTextList(source.sources, 10)
   const fetchedAt = normalizeFreeText(source.fetchedAt ?? source.fetched_at)
 
   const normalizedSourceDetails = sourceDetails
@@ -384,7 +384,7 @@ export function normalizeCompanyIntel(raw: unknown): CompanyIntelData {
       }
     })
     .filter((item): item is CompanyIntelData['sourceDetails'][number] => Boolean(item))
-    .slice(0, 8)
+    .slice(0, 10)
 
   return {
     companyName: normalizeFreeText(source.companyName ?? source.company_name),
@@ -392,10 +392,10 @@ export function normalizeCompanyIntel(raw: unknown): CompanyIntelData {
     businessScope: normalizeFreeText(source.businessScope ?? source.business_scope ?? source.mainBusiness ?? source.main_business),
     orgStructure: normalizeFreeText(source.orgStructure ?? source.org_structure),
     howToReference: normalizeFreeText(source.howToReference ?? source.how_to_reference),
-    techStack: normalizeTextList(source.techStack ?? source.tech_stack, 10),
+    techStack: normalizeTextList(source.techStack ?? source.tech_stack, 15),
     cultureNotes: normalizeFreeText(source.cultureNotes ?? source.culture_notes),
-    competitors: normalizeTextList(source.competitors, 5),
-    reverseQuestions: normalizeTextList(source.reverseQuestions ?? source.reverse_questions, 5),
+    competitors: normalizeTextList(source.competitors, 8),
+    reverseQuestions: normalizeTextList(source.reverseQuestions ?? source.reverse_questions, 8),
     sources: normalizedSources,
     sourceDetails: normalizedSourceDetails.length
       ? normalizedSourceDetails
@@ -407,5 +407,17 @@ export function normalizeCompanyIntel(raw: unknown): CompanyIntelData {
         fetchedAt,
       })),
     fetchedAt,
+    // 新增字段
+    companySize: normalizeFreeText(source.companySize ?? source.company_size) || undefined,
+    fundingStage: normalizeFreeText(source.fundingStage ?? source.funding_stage) || undefined,
+    foundedYear: normalizeFreeText(source.foundedYear ?? source.founded_year) || undefined,
+    industry: normalizeFreeText(source.industry) || undefined,
+    products: normalizeTextList(source.products, 10) as string[] | undefined,
+    recentNews: normalizeTextList(source.recentNews ?? source.recent_news, 8) as string[] | undefined,
+    interviewProcess: normalizeFreeText(source.interviewProcess ?? source.interview_process) || undefined,
+    interviewStyle: normalizeFreeText(source.interviewStyle ?? source.interview_style) || undefined,
+    frequentTopics: normalizeTextList(source.frequentTopics ?? source.frequent_topics, 10) as string[] | undefined,
+    employeeReviews: normalizeFreeText(source.employeeReviews ?? source.employee_reviews) || undefined,
+    workPace: normalizeFreeText(source.workPace ?? source.work_pace) || undefined,
   }
 }

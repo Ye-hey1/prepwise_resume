@@ -191,6 +191,12 @@ export function useInterviewJd() {
       techStack: companyIntel?.techStack ?? [],
       competitors: companyIntel?.competitors ?? [],
       reverseQuestions: companyIntel?.reverseQuestions ?? [],
+      interviewStyle: companyIntel?.interviewStyle,
+      companyBusinessScope: companyIntel?.businessScope,
+      companyProducts: companyIntel?.products,
+      interviewProcess: companyIntel?.interviewProcess,
+      frequentTopics: companyIntel?.frequentTopics,
+      howToReference: companyIntel?.howToReference,
     }
   }
 

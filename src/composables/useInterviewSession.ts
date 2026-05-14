@@ -284,6 +284,8 @@ export function useInterviewSession(deps: {
         jobContext: buildJobContextPayload(),
         interviewerName: getModelById(prepConfig.value.interviewerModelId)?.name,
         candidateName: resumeSnapshot.value.basicInfo.name || undefined,
+        interviewerStyle: prepConfig.value.interviewerStyle || 'balanced',
+        followUpDepth: prepConfig.value.followUpDepth || 2,
       }, undefined, {
         onAssistantReplyChunk(text) {
           updateAssistantMessageById(draftMessageId, text)

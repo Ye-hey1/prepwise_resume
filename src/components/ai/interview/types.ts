@@ -38,7 +38,19 @@ export interface InterviewJdContext {
   competitors?: string[]
   /** 推荐反问面试官的问题 */
   reverseQuestions?: string[]
+  /** 公司核心业务 */
+  companyBusinessScope?: string
+  /** 公司产品线 */
+  companyProducts?: string[]
+  /** 面试流程 */
+  interviewProcess?: string
+  /** 高频考点 */
+  frequentTopics?: string[]
+  /** 面试策略建议 */
+  howToReference?: string
 }
+
+export type InterviewerStyle = 'balanced' | 'gentle' | 'pressure' | 'technical' | 'business'
 
 export interface InterviewPrepConfig {
   mode: InterviewMode
@@ -53,6 +65,10 @@ export interface InterviewPrepConfig {
   candidateModelId: string
   /** TTS 音色 ID（如 male-qn-qingse） */
   voice?: string
+  /** 面试官风格 */
+  interviewerStyle?: InterviewerStyle
+  /** 追问深度 1-3 */
+  followUpDepth?: number
 }
 
 export interface ScoreBreakdown {

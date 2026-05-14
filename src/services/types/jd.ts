@@ -169,6 +169,28 @@ export interface CompanyIntelData {
   sourceDetails: CompanyIntelSourceDetail[]
   /** 本次情报抓取时间 */
   fetchedAt: string
+  /** 公司规模 */
+  companySize?: string
+  /** 融资阶段 */
+  fundingStage?: string
+  /** 成立时间 */
+  foundedYear?: string
+  /** 所属行业 */
+  industry?: string
+  /** 核心产品线 */
+  products?: string[]
+  /** 近期动态 */
+  recentNews?: string[]
+  /** 面试流程描述 */
+  interviewProcess?: string
+  /** 面试风格 */
+  interviewStyle?: string
+  /** 高频考点 */
+  frequentTopics?: string[]
+  /** 员工评价摘要 */
+  employeeReviews?: string
+  /** 工作节奏 */
+  workPace?: string
 }
 
 // ?? ???????????? ??

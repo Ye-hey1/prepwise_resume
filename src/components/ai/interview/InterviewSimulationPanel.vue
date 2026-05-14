@@ -76,6 +76,7 @@ const emit = defineEmits<{
   (e: 'requestHint'): void
   (e: 'dismissHint'): void
   (e: 'useOpener', opener: string): void
+  (e: 'quickAction', action: 'switch' | 'deeper' | 'skip'): void
 }>()
 
 const chatListRef = ref<HTMLElement | null>(null)
@@ -211,14 +212,25 @@ const isStreamingReply = computed(() => Boolean(props.streamingAssistantMessageI
 const latestAssistantMessage = computed(() =>
   [...props.messages].reverse().find((item) => item.role === 'assistant'),
 )
+/** 最后一条消息是否来自用户（用于隐藏"当前问题"栏） */
+const isLastMessageFromUser = computed(() => {
+  if (props.messages.length === 0) return false
+  return props.messages[props.messages.length - 1]?.role === 'user'
+})
+/** 是否显示快捷操作按钮（面试官提问后、用户未回答时） */
+const showQuickActions = computed(() => {
+  return props.sessionStarted && !props.isLoading && !isLastMessageFromUser.value && props.messages.length > 0
+})
 const currentQuestion = computed(() => {
+  // AI 正在思考/生成时不显示当前问题栏
+  if (props.isLoading) return ''
   const content = latestAssistantMessage.value
     ? normalizeAssistantContent(latestAssistantMessage.value.content)
     : ''
   if (!content) return ''
   const compact = content.replace(/\s+/g, ' ').trim()
-  if (compact.length <= 140) return compact
-  return `${compact.slice(0, 140).trim()}...`
+  if (compact.length <= 100) return compact
+  return `${compact.slice(0, 100).trim()}...`
 })
 const roomStatusLabel = computed(() => {
   if (!props.sessionStarted) return '候场中'
@@ -377,9 +389,9 @@ onUnmounted(() => {
         <div class="meeting-shell" :class="{ 'with-question': Boolean(currentQuestion) }">
           <div class="meeting-strip">
             <div class="meeting-strip-left">
-              <span class="meeting-pill rec">
-                <span class="meeting-rec-dot"></span>
-                LIVE
+              <span class="meeting-pill" :class="{ rec: sessionStarted }">
+                <span class="meeting-rec-dot" :class="{ active: sessionStarted }"></span>
+                {{ sessionStarted ? 'LIVE' : '待机' }}
               </span>
               <span class="meeting-pill">{{ roomStageLabel }}</span>
               <span class="meeting-pill subtle">{{ roomStatusLabel }}</span>
@@ -434,7 +446,7 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div v-if="currentQuestion" class="question-bar">
+          <div v-if="currentQuestion && !isLastMessageFromUser" class="question-bar">
             <span class="question-bar-label">当前问题</span>
             <p class="question-bar-text">{{ currentQuestion }}</p>
           </div>
@@ -489,6 +501,22 @@ onUnmounted(() => {
               <span class="think-dot" />
             </div>
           </div>
+        </div>
+
+        <!-- 快捷操作按钮 -->
+        <div v-if="showQuickActions" class="quick-actions-bar">
+          <button type="button" class="quick-action-btn" @click="emit('quickAction', 'switch')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            换个方向
+          </button>
+          <button type="button" class="quick-action-btn" @click="emit('quickAction', 'deeper')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>
+            追问这个
+          </button>
+          <button type="button" class="quick-action-btn" @click="emit('quickAction', 'skip')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+            跳过
+          </button>
         </div>
 
         <!-- 输入区域 -->
@@ -977,6 +1005,12 @@ onUnmounted(() => {
   height: 7px;
   margin-right: 8px;
   border-radius: 50%;
+  background: #6b7a90;
+  box-shadow: none;
+  transition: background 0.3s ease, box-shadow 0.3s ease;
+}
+
+.meeting-rec-dot.active {
   background: #fb7185;
   box-shadow: 0 0 10px rgba(251, 113, 133, 0.45);
   animation: meeting-rec-pulse 1.6s ease-in-out infinite;
@@ -1081,19 +1115,29 @@ onUnmounted(() => {
   flex: 1;
   min-width: 0;
   font-size: 13px;
-  line-height: 1.75;
+  line-height: 1.6;
   color: #d9e7f7;
   font-weight: 600;
+  /* 限制最多 2 行 */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .chat-scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 18px 20px 8px;
+  padding: 14px 20px 6px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
+}
+
+/* 当没有空状态时（有消息），让内容贴近底部 */
+.chat-scroll:not(:has(.chat-empty)) {
+  justify-content: flex-end;
 }
 
 .chat-scroll::-webkit-scrollbar { width: 4px; }
@@ -1322,12 +1366,43 @@ onUnmounted(() => {
 .pill-red { background: linear-gradient(135deg, rgba(239, 68, 68, 0.12), rgba(251, 146, 60, 0.06)); color: #dc2626; border: 1px solid rgba(239, 68, 68, 0.2); }
 
 /* ═══ 输入区域 ═══ */
+.quick-actions-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 20px 8px;
+  flex-shrink: 0;
+}
+
+.quick-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  background: rgba(15, 23, 42, 0.3);
+  color: rgba(203, 213, 225, 0.8);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  backdrop-filter: blur(8px);
+}
+
+.quick-action-btn:hover {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.3);
+  color: rgba(147, 197, 253, 1);
+  transform: translateY(-1px);
+}
+
 .chat-input-area {
   flex-shrink: 0;
   display: flex;
   align-items: flex-end;
   gap: 14px;
-  margin: 0 16px 16px;
+  margin: 0 16px 12px;
   padding: 12px 14px;
   border-radius: 22px;
   background: rgba(15, 23, 42, 0.32);

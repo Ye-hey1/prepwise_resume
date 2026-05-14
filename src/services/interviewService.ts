@@ -358,6 +358,16 @@ export interface InterviewJobContext {
   competitors?: string[]
   /** 推荐反问面试官的问题 */
   reverseQuestions?: string[]
+  /** 公司核心业务描述 */
+  companyBusinessScope?: string
+  /** 公司核心产品线 */
+  companyProducts?: string[]
+  /** 面试流程描述 */
+  interviewProcess?: string
+  /** 高频考点 */
+  frequentTopics?: string[]
+  /** 面试策略建议 */
+  howToReference?: string
 }
 
 export interface InterviewTurnRequest {
@@ -375,6 +385,10 @@ export interface InterviewTurnRequest {
   interviewerName?: string
   /** 候选人姓名（来自简历） */
   candidateName?: string
+  /** 面试官风格 */
+  interviewerStyle?: string
+  /** 追问深度 1-3 */
+  followUpDepth?: number
 }
 
 export interface InterviewTurnStreamCallbacks {
@@ -434,11 +448,18 @@ function buildJobContextDigest(jobContext?: InterviewJobContext): string {
   if (jobContext.recommendedStories?.length) sections.push(`推荐案例: ${jobContext.recommendedStories.join(' / ')}`)
   if (jobContext.highRiskQuestions?.length) sections.push(`高风险追问: ${jobContext.highRiskQuestions.join(' / ')}`)
   if (jobContext.customNote) sections.push(`面试备注: ${truncateText(jobContext.customNote, 180)}`)
-  if (jobContext.companyCulture) sections.push(`公司工程文化: ${jobContext.companyCulture}`)
-  if (jobContext.interviewStyle) sections.push(`公司面试风格: ${jobContext.interviewStyle}`)
+
+  // 公司情报注入
+  if (jobContext.companyBusinessScope) sections.push(`公司业务: ${truncateText(jobContext.companyBusinessScope, 200)}`)
+  if (jobContext.companyProducts?.length) sections.push(`公司产品线: ${jobContext.companyProducts.join(' / ')}`)
+  if (jobContext.companyCulture) sections.push(`工程文化: ${truncateText(jobContext.companyCulture, 150)}`)
+  if (jobContext.interviewStyle) sections.push(`面试风格: ${jobContext.interviewStyle}`)
+  if (jobContext.interviewProcess) sections.push(`面试流程: ${truncateText(jobContext.interviewProcess, 150)}`)
+  if (jobContext.frequentTopics?.length) sections.push(`高频考点: ${jobContext.frequentTopics.join(' / ')}`)
   if (jobContext.techStack?.length) sections.push(`公司技术栈: ${jobContext.techStack.join(' / ')}`)
   if (jobContext.competitors?.length) sections.push(`竞品认知: ${jobContext.competitors.join(' / ')}`)
-  if (jobContext.reverseQuestions?.length) sections.push(`推荐反问: ${jobContext.reverseQuestions.join('；')}`)
+  if (jobContext.howToReference) sections.push(`面试策略: ${truncateText(jobContext.howToReference, 200)}`)
+  if (jobContext.reverseQuestions?.length) sections.push(`推荐反问: ${jobContext.reverseQuestions.slice(0, 3).join('；')}`)
   if (jobContext.jdText) sections.push(`JD 核心职责: ${truncateText(toPlainText(jobContext.jdText), 120)}`)
 
   return sections.length > 0 ? sections.join('\n') : '（暂无岗位上下文）'
@@ -787,7 +808,10 @@ export async function requestInterviewTurn(
   const endpoint = normalizeApiUrl(request.config.apiUrl)
   const systemPrompt =
     request.mode === 'candidate'
-      ? candidateModeSystemPrompt()
+      ? candidateModeSystemPrompt({
+          style: request.interviewerStyle as any,
+          followUpDepth: request.followUpDepth,
+        })
       : interviewerModeSystemPrompt(request.resumeSnapshot.basicInfo.jobTitle?.trim() || '')
   const userCommandPrompt = buildUserCommandPrompt(request)
 

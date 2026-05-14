@@ -131,19 +131,19 @@ export async function generateCompanyIntel(
 
   const companyAliases = buildCompanyAliases(company)
   const singleProviderMode = searchProviders.length === 1
-  const perQueryLimit = singleProviderMode ? 5 : 3
+  const perQueryLimit = singleProviderMode ? 8 : 5
 
   const queries = [
-    { topic: 'searchBusiness', query: `${company} 官网 关于我们 公司介绍 核心产品 解决方案 客户` },
-    { topic: 'searchRecruitment', query: `${company} ${position} 招聘 岗位 技术栈 任职要求 团队 BOSS直聘 猎聘` },
-    { topic: 'searchTechStack', query: `${company} 技术栈 工程文化 技术博客 研发 团队 AI 产品` },
-    { topic: 'searchNews', query: `${company} 新闻 动态 发布 合作 客户 融资 创始人` },
+    { topic: 'searchBusiness', query: `"${company}" 公司介绍 产品 解决方案 客户案例 商业模式 site:官网 OR 关于我们 OR 发展历程` },
+    { topic: 'searchRecruitment', query: `"${company}" ${position} 招聘 技术栈 团队规模 工程文化 开发流程 site:boss.cn OR site:lagou.com OR site:zhipin.com` },
+    { topic: 'searchInterview', query: `"${company}" 面试经验 面试流程 员工评价 工作体验 加班 薪资 site:maimai.cn OR site:kanzhun.com OR site:nowcoder.com` },
+    { topic: 'searchNews', query: `"${company}" 融资 估值 竞品 行业排名 新闻 动态 合作 site:36kr.com OR site:huxiu.com OR site:itjuzi.com` },
   ] as const
 
   const searchResults: Record<(typeof queries)[number]['topic'], SearchResultItem[]> = {
     searchBusiness: [],
     searchRecruitment: [],
-    searchTechStack: [],
+    searchInterview: [],
     searchNews: [],
   }
 
@@ -172,17 +172,19 @@ export async function generateCompanyIntel(
   const userMessage = COMPANY_INTEL_USER_TEMPLATE
     .replace('{company}', company)
     .replace('{position}', position)
-    .replace('{jdText}', jdText.slice(0, 2500))
+    .replace('{jdText}', jdText.slice(0, 3000))
     .replace('{searchBusiness}', formatSearchResults(searchResults.searchBusiness))
     .replace('{searchRecruitment}', formatSearchResults(searchResults.searchRecruitment))
-    .replace('{searchTechStack}', formatSearchResults(searchResults.searchTechStack))
+    .replace('{searchTechStack}', formatSearchResults(searchResults.searchRecruitment))
     .replace('{searchNews}', formatSearchResults(searchResults.searchNews))
+    .replace('{searchInterview}', formatSearchResults(searchResults.searchInterview))
+    .replace('{searchCompetitors}', formatSearchResults(searchResults.searchNews))
 
   const rawText = await nonStreamAIRequest(
     aiConfig,
     COMPANY_INTEL_SYSTEM_PROMPT,
     userMessage,
-    { temperature: 0.2 },
+    { temperature: 0.3, maxTokens: 4096 },
     combinedSignal,
   )
 

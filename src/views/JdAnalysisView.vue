@@ -18,6 +18,7 @@ import JdInterviewBankPanel from '@/components/jd/JdInterviewBankPanel.vue'
 import MatchResultTab from '@/components/jd/MatchResultTab.vue'
 import OptimizeTab from '@/components/jd/OptimizeTab.vue'
 import CompanyIntelCard from '@/components/jd/CompanyIntelCard.vue'
+import CompanyIntelDialog from '@/components/jd/CompanyIntelDialog.vue'
 import InterviewPerformanceCard from '@/components/jd/InterviewPerformanceCard.vue'
 import NextActionCard from '@/components/jd/NextActionCard.vue'
 import LoopStepper from '@/components/jd/LoopStepper.vue'
@@ -37,6 +38,7 @@ const resumeText = computed(() => formatResumeForAI(resumeStore.exportToJSON() a
 const showBankPanel = ref(false)
 const showMatchResultPanel = ref(false)
 const showOptimizePanel = ref(false)
+const showCompanyIntelDialog = ref(false)
 const activeTab = ref('overview')
 
 /** 当前分析对应的历史记录项（用于读取面试表现数据） */
@@ -188,7 +190,7 @@ const stageCards = computed(() => {
       completed: Boolean(store.prepInsight),
     },
     {
-      key: 'companyIntel',
+      key: 'companyIntel' as AnalysisStageKey,
       title: '公司情报',
       description: '搜索公司业务方向、面试风格、技术栈与工程文化。',
       loading: store.stageLoading.companyIntel,
@@ -197,7 +199,8 @@ const stageCards = computed(() => {
     },
   ]
 
-  return cards.map((card) => {
+  // 从自动分析卡片中排除公司情报（改为手动触发），然后添加状态信息
+  return cards.filter(c => c.key !== 'companyIntel').map((card) => {
     const status = card.loading ? 'loading' : card.error ? 'error' : card.completed ? 'completed' : 'idle'
     return {
       ...card,
@@ -256,7 +259,7 @@ async function handleParsed(data: any) {
   runMatchStage(data)
   runOverviewStage()
   runSuggestionsStage(data)
-  runCompanyIntelStage()
+  // 公司情报不再自动执行，改为手动触发
 }
 
 /** 阶段 2：人岗匹配 → 完成后串行启动备面洞察 */
@@ -557,7 +560,6 @@ function formatElapsed(startTime: number): string {
       <template v-else>
         <header class="ds-header-bar">
           <div class="ds-hb-left">
-            <div class="ds-hb-tag">JD INSIGHT</div>
             <h1 class="ds-hb-title">岗位分析</h1>
             <div class="ds-hb-divider"></div>
             <div class="ds-hb-meta-item">
@@ -662,7 +664,7 @@ function formatElapsed(startTime: number): string {
           </article>
         </div>
 
-        <!-- 下行：三张操作入口卡 -->
+        <!-- 下行：四张操作入口卡 -->
         <div class="tools-row">
           <article class="bank-entry-card secondary" @click="showMatchResultPanel = true">
             <div class="bank-entry-content">
@@ -700,16 +702,23 @@ function formatElapsed(startTime: number): string {
               </span>
             </div>
           </article>
-        </div>
 
-        <!-- 公司情报展示（有数据或加载中或错误时显示） -->
-        <CompanyIntelCard
-          v-if="store.companyIntel || store.stageLoading.companyIntel || store.stageError.companyIntel"
-          :intel="store.companyIntel"
-          :is-loading="store.stageLoading.companyIntel"
-          :error="store.stageError.companyIntel"
-          @retry="retryStage('companyIntel')"
-        />
+          <article class="bank-entry-card intel-card" @click="showCompanyIntelDialog = true">
+            <div class="bank-entry-content">
+              <div class="bank-icon-wrap teal">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+              </div>
+              <h3>公司情报</h3>
+              <p>搜索目标公司的业务方向、技术栈、面试风格与工程文化。</p>
+              <span class="bank-act">
+                {{ store.companyIntel ? '查看详情' : '开始搜集' }}
+                <span v-if="store.companyIntel" class="bank-count-badge">已完成</span>
+                <span v-else-if="store.stageLoading.companyIntel" class="bank-count-badge">搜集中...</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+              </span>
+            </div>
+          </article>
+        </div>
 
         <!-- 面试表现追踪（有面试记录时显示） -->
         <InterviewPerformanceCard
@@ -828,6 +837,12 @@ function formatElapsed(startTime: number): string {
         :match-result="store.matchResult"
         :company-intel="store.companyIntel"
         @close="showBankPanel = false"
+      />
+
+      <!-- 公司情报弹窗 -->
+      <CompanyIntelDialog
+        v-if="showCompanyIntelDialog"
+        @close="showCompanyIntelDialog = false"
       />
 
       <!-- 岗位拆解弹窗 (视窗化) -->
@@ -990,20 +1005,21 @@ function formatElapsed(startTime: number): string {
 
 /* ═══ 视窗化弹窗容器 (Viewport Modal) ═══ */
 .stage-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .stage-card {
   display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 18px;
-  border-radius: 18px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 10px;
   border: 1px solid var(--border-color);
-  background: color-mix(in srgb, var(--bg-card) 92%, white);
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.04);
+  background: var(--bg-card);
+  flex: 1;
+  min-width: 160px;
 }
 
 .stage-card.is-loading {
@@ -1020,70 +1036,60 @@ function formatElapsed(startTime: number): string {
 
 .stage-card-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
 }
 
 .stage-card-title {
   margin: 0;
-  font-size: 15px;
-  font-weight: 800;
+  font-size: 13px;
+  font-weight: 700;
   color: var(--text-primary);
+  white-space: nowrap;
 }
 
 .stage-card-desc {
-  margin: 6px 0 0;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--text-secondary);
+  display: none;
 }
 
 .stage-chip {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  min-height: 26px;
-  padding: 0 10px;
+  min-height: 20px;
+  padding: 0 8px;
   border-radius: 999px;
-  font-size: 11px;
-  font-weight: 800;
+  font-size: 10px;
+  font-weight: 700;
   background: rgba(148, 163, 184, 0.12);
   color: var(--text-muted);
 }
 
 .stage-chip.is-loading {
-  background: color-mix(in srgb, var(--primary-500) 12%, white);
+  background: color-mix(in srgb, var(--primary-500) 12%, var(--bg-card));
   color: var(--primary-600);
 }
 
 .stage-chip.is-error {
-  background: color-mix(in srgb, var(--accent-red) 12%, white);
+  background: color-mix(in srgb, var(--accent-red) 12%, var(--bg-card));
   color: var(--accent-red);
 }
 
 .stage-chip.is-completed {
-  background: color-mix(in srgb, var(--accent-green) 12%, white);
+  background: color-mix(in srgb, var(--accent-green) 12%, var(--bg-card));
   color: var(--accent-green);
 }
 
 .stage-error-text {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--accent-red);
+  display: none;
 }
 
 /* ═══ 流式预览 + 计时 ═══ */
 .stage-stream-preview {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--primary-500) 3%, var(--bg-card-muted));
-  border: 1px solid color-mix(in srgb, var(--primary-500) 8%, transparent);
-  min-height: 32px;
+  display: none;
 }
 
 .stream-text {
@@ -1106,18 +1112,17 @@ function formatElapsed(startTime: number): string {
 }
 
 .stage-card-actions {
-  display: flex;
-  justify-content: flex-end;
+  display: none;
 }
 
 .stage-action-btn {
-  min-height: 36px;
-  padding: 0 14px;
-  border-radius: 10px;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
   border: 1px solid var(--border-color);
   background: var(--bg-card);
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 800;
   cursor: pointer;
 }
@@ -1253,6 +1258,7 @@ function formatElapsed(startTime: number): string {
   .ds-header-bar { flex-direction: column; align-items: stretch; gap: 12px; }
   .ds-hb-left, .ds-hb-right { flex-wrap: wrap; }
   .ds-hb-status { border-right: none; }
+  .tools-row { grid-template-columns: repeat(2, 1fr); }
 }
 
 .stage-grid-after-score {
@@ -1262,7 +1268,7 @@ function formatElapsed(startTime: number): string {
 /* ═══ Tools Row（三列等宽工具入口） ═══ */
 .tools-row {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 14px;
 }
 
@@ -1354,6 +1360,14 @@ function formatElapsed(startTime: number): string {
   border: 1px solid rgba(245, 158, 11, 0.14);
   color: #d97706;
 }
+
+.bank-icon-wrap.teal {
+  background: rgba(14, 165, 183, 0.08);
+  border: 1px solid rgba(14, 165, 183, 0.14);
+  color: #0ea5b7;
+}
+
+.bank-entry-card.intel-card .bank-act { color: #0ea5b7; }
 
 .bank-entry-card:hover .bank-icon-wrap {
   transform: scale(1.08);

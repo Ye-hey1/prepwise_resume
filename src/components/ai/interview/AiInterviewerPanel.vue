@@ -22,6 +22,7 @@ import { useAiConfigStore } from '@/stores/aiConfig'
 import { useJdAnalysisStore } from '@/stores/jdAnalysis'
 import { useLearningProgressStore } from '@/stores/learningProgress'
 import { useResumeStore } from '@/stores/resume'
+import { useThemeStore } from '@/stores/theme'
 import { savedQuestionToDrill } from '@/services/questionAdapter'
 
 import type {
@@ -63,6 +64,7 @@ const resumeStore = useResumeStore()
 const aiConfig = useAiConfigStore()
 const jdAnalysisStore = useJdAnalysisStore()
 const learningProgressStore = useLearningProgressStore()
+const themeStore = useThemeStore()
 const router = useRouter()
 const route = useRoute()
 
@@ -92,6 +94,20 @@ const currentPhaseIndex = computed(() =>
 const isImmersive = computed(() =>
   session.isSimulationPhase.value,
 )
+
+// 进入面试间时强制暗色模式，退出时恢复
+let previousTheme: string | null = null
+watch(isImmersive, (immersive) => {
+  if (immersive) {
+    previousTheme = themeStore.preference
+    if (themeStore.preference !== 'dark') {
+      themeStore.setTheme('dark')
+    }
+  } else if (previousTheme && previousTheme !== 'dark') {
+    themeStore.setTheme(previousTheme as 'light' | 'dark' | 'system')
+    previousTheme = null
+  }
+})
 
 const showWorkspaceSidebar = computed(() => !isImmersive.value)
 
@@ -408,6 +424,20 @@ function handleUseOpener(opener: string) {
   if (!opener) return
   session.inputText.value = opener + (session.inputText.value ? `\n${session.inputText.value}` : '')
   hint.dismissHint()
+}
+
+/** 快捷操作：换方向/追问/跳过 */
+function handleQuickAction(action: 'switch' | 'deeper' | 'skip') {
+  const actionMessages: Record<string, string> = {
+    switch: '请换一个考察方向提问，不要继续当前话题。',
+    deeper: '请针对我刚才的回答继续深入追问，挖掘更多细节。',
+    skip: '这个问题我暂时跳过，请直接问下一个问题。',
+  }
+  const message = actionMessages[action]
+  if (message) {
+    session.inputText.value = message
+    session.handleSend()
+  }
 }
 
 function handleResetAll() {
@@ -810,13 +840,12 @@ onUnmounted(() => {
 
     <!-- 沉浸式模拟面试工作台 -->
     <template v-else-if="session.isSimulationPhase.value">
-      <header class="immersive-topbar">
-        <div class="topbar-left">
-          <div class="topbar-tag">SIMULATION</div>
-          <span class="topbar-role-badge" :class="{ interviewer: session.mode.value === 'interviewer' }">
-            {{ session.mode.value === 'candidate' ? '面试者模式' : '面试官模式' }}
-          </span>
-          <span class="topbar-divider">|</span>
+      <div class="immersive-container">
+        <div class="topbar-trigger-zone"></div>
+        <header class="immersive-topbar">
+          <div class="topbar-left">
+            <div class="topbar-tag">模拟面试</div>
+            <span class="topbar-divider">|</span>
           <span class="topbar-position">{{ jd.jdContext.value.targetRole || '未识别岗位' }}</span>
         </div>
 
@@ -831,9 +860,6 @@ onUnmounted(() => {
           <button class="topbar-action-btn" type="button" @click="session.showResumePreview.value = !session.showResumePreview.value">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
             {{ session.showResumePreview.value ? '收起简历' : '查看简历' }}
-          </button>
-          <button class="topbar-action-btn" type="button" @click="showAiConfig = true">
-            模型: {{ modelDisplayName }}
           </button>
           <button class="topbar-action-btn muted" type="button" @click="handleBackToAnalysis">
             返回准备
@@ -897,12 +923,14 @@ onUnmounted(() => {
           @request-hint="handleRequestHint"
           @dismiss-hint="hint.dismissHint"
           @use-opener="handleUseOpener"
+          @quick-action="handleQuickAction"
         />
 
         <ResumePreviewOverlay
           v-if="session.showResumePreview.value"
           @close="session.showResumePreview.value = false"
         />
+      </div>
       </div>
     </template>
 
@@ -1204,10 +1232,52 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 12px 24px;
-  background: var(--bg-card);
-  border-bottom: 1px solid var(--border-color);
+  background: rgba(14, 18, 25, 0.9);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(140, 165, 195, 0.08);
   flex-shrink: 0;
-  z-index: 10;
+  z-index: 20;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+}
+
+.immersive-container {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+/* 顶部热区：一个透明的触发层 */
+.topbar-trigger-zone {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 12px;
+  z-index: 19;
+}
+
+/* 鼠标进入热区或 topbar 本身时显示 */
+.topbar-trigger-zone:hover ~ .immersive-topbar,
+.immersive-topbar:hover {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.immersive-workspace {
+  position: relative;
+  flex: 1;
+  display: flex;
+  overflow: hidden;
 }
 
 .topbar-left, .topbar-center, .topbar-right {

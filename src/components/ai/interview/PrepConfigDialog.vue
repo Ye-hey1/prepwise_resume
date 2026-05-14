@@ -56,6 +56,22 @@ const difficultyOptions = [
   { key: 'senior' as const, label: '高级', desc: '偏系统化表达与业务判断' },
 ]
 
+// 面试官风格选项
+const styleOptions = [
+  { key: 'balanced' as const, label: '均衡', desc: '综合考察，节奏适中' },
+  { key: 'gentle' as const, label: '温和型', desc: '引导式提问，给予鼓励' },
+  { key: 'pressure' as const, label: '压力型', desc: '快节奏追问，挑战回答' },
+  { key: 'technical' as const, label: '技术型', desc: '深入原理，关注实现细节' },
+  { key: 'business' as const, label: '业务型', desc: '关注业务价值和用户影响' },
+]
+
+// 追问深度选项
+const depthOptions = [
+  { key: 1, label: '浅层', desc: '每题 1 轮追问' },
+  { key: 2, label: '中等', desc: '每题 2 轮追问' },
+  { key: 3, label: '深度', desc: '每题 3 轮追问' },
+]
+
 // 时长/提示步进
 function adjustDuration(delta: number) {
   const next = prepConfig.value.durationMinutes + delta
@@ -175,6 +191,44 @@ const QUICK_VOICES = [
                       class="diff-btn"
                       :class="{ active: prepConfig.difficulty === item.key }"
                       @click="prepConfig.difficulty = item.key"
+                    >
+                      <span class="diff-name">{{ item.label }}</span>
+                      <span class="diff-desc">{{ item.desc }}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 面试官风格 -->
+              <div class="config-section">
+                <div class="section-label">面试官风格</div>
+                <div class="section-content">
+                  <div class="difficulty-list">
+                    <button
+                      v-for="item in styleOptions"
+                      :key="item.key"
+                      class="diff-btn"
+                      :class="{ active: (prepConfig.interviewerStyle || 'balanced') === item.key }"
+                      @click="prepConfig.interviewerStyle = item.key"
+                    >
+                      <span class="diff-name">{{ item.label }}</span>
+                      <span class="diff-desc">{{ item.desc }}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 追问深度 -->
+              <div class="config-section">
+                <div class="section-label">追问深度</div>
+                <div class="section-content">
+                  <div class="difficulty-list">
+                    <button
+                      v-for="item in depthOptions"
+                      :key="item.key"
+                      class="diff-btn"
+                      :class="{ active: (prepConfig.followUpDepth || 2) === item.key }"
+                      @click="prepConfig.followUpDepth = item.key"
                     >
                       <span class="diff-name">{{ item.label }}</span>
                       <span class="diff-desc">{{ item.desc }}</span>

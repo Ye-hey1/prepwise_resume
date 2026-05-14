@@ -606,7 +606,7 @@ watch(session.workflowPhase, (phase) => {
 
   // 记录学习进度（提取维度得分）
   const dimensionScores = learningProgressStore.extractDimensionScores(
-    session.reviewData.value.scoreBreakdown ?? null,
+    (session.reviewData.value.scoreBreakdown as unknown as Record<string, number>) ?? null,
     session.reviewData.value.weaknesses ?? [],
   )
   const hasAnyScore = Object.values(dimensionScores).some(s => s > 0)

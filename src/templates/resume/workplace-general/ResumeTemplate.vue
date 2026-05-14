@@ -1,9 +1,11 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed } from 'vue'
 import { toHref } from '../../shared/metaIcons'
 import { useResumeTemplateData } from '../../shared/useResumeTemplateData'
+import { useTemplateCustomization } from '../../shared/useTemplateCustomization'
 
 const { store, hasAnyContent, simpleContactMeta, moduleOrderStyle } = useResumeTemplateData()
+const { cssVars } = useTemplateCustomization()
 
 const displayName = computed(() => store.basicInfo.name || '通用职场简历')
 
@@ -42,6 +44,7 @@ const extraLinks = computed(() => {
     .filter((item) => item.text)
     .map((item, index) => ({
       key: `${item.key}-${index}`,
+      label: item.key === 'website' ? 'Web' : item.key === 'github' ? 'GitHub' : 'Blog',
       text: item.text,
       href: toHref(item.text),
     }))
@@ -56,7 +59,7 @@ function subLine(values: Array<string | undefined>): string {
 </script>
 
 <template>
-  <div class="resume-template-workplace">
+  <div class="resume-template-workplace" :style="cssVars">
     <div class="hero-bg">
       <div class="avatar-wrap">
         <img v-if="store.basicInfo.avatar" :src="store.basicInfo.avatar" alt="头像" />
@@ -71,12 +74,12 @@ function subLine(values: Array<string | undefined>): string {
       <p v-if="baseMetaLineTwo" class="meta-line">{{ baseMetaLineTwo }}</p>
       <p v-if="baseMetaLineThree" class="meta-line">{{ baseMetaLineThree }}</p>
       <div v-if="extraLinks.length" class="extra-links">
-        <a v-for="item in extraLinks" :key="item.key" :href="item.href" target="_blank" rel="noopener noreferrer">{{ item.text }}</a>
+        <a v-for="item in extraLinks" :key="item.key" :href="item.href" target="_blank" rel="noopener noreferrer"><span class="meta-label" v-if="item.label">{{ item.label }}: </span>{{ item.text }}</a>
       </div>
     </header>
 
     <section v-if="store.isModuleVisible('selfIntro') && store.selfIntro" class="resume-section" :style="moduleOrderStyle('selfIntro')">
-      <h2 class="section-title"><span>个人总结</span></h2>
+      <h2 class="section-title"><span>个人简介</span></h2>
       <div class="entry-rich" v-html="store.selfIntro"></div>
     </section>
 
@@ -104,15 +107,23 @@ function subLine(values: Array<string | undefined>): string {
       <h2 class="section-title"><span>项目经历</span></h2>
       <article v-for="project in store.projectList" :key="project.id" class="entry" v-show="project.name">
         <div class="entry-head">
-          <p class="entry-main"><strong>{{ project.name }}</strong></p>
+          <p class="entry-main">
+            <strong>{{ project.name }}</strong>
+            <span v-if="project.role">{{ project.role }}</span>
+          </p>
           <span class="entry-date">{{ project.startDate }} - {{ project.endDate || '至今' }}</span>
         </div>
-        <p class="entry-subline">{{ subLine([project.role]) }}</p>
         <p v-if="project.link" class="entry-link-row">
-          <a class="entry-link" :href="project.link" target="_blank" rel="noopener noreferrer">{{ project.link }}</a>
+          <a class="entry-link" :href="project.link" target="_blank" rel="noopener noreferrer">项目链接：{{ project.link }}</a>
         </p>
-        <div v-if="project.introduction" class="entry-rich" v-html="project.introduction"></div>
-        <div v-if="project.mainWork" class="entry-rich" v-html="project.mainWork"></div>
+        <div v-if="project.introduction">
+          <p v-if="store.showProjectSubtitles" class="project-block-title">项目介绍</p>
+          <div class="entry-rich" v-html="project.introduction"></div>
+        </div>
+        <div v-if="project.mainWork">
+          <p v-if="store.showProjectSubtitles" class="project-block-title">主要工作</p>
+          <div class="entry-rich" v-html="project.mainWork"></div>
+        </div>
       </article>
     </section>
 
@@ -159,17 +170,39 @@ function subLine(values: Array<string | undefined>): string {
 </template>
 
 <style scoped>
+/* 全局动态布局引擎支持 */
+:deep(.resume-header), :deep(.header) { 
+  display: flex !important;
+  flex-direction: var(--tpl-header-dir, row) !important;
+  justify-content: var(--tpl-header-justify, space-between) !important; 
+  align-items: var(--tpl-header-align-items, flex-start) !important;
+}
+:deep(.header-main), :deep(.name-row) { 
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: var(--tpl-header-align, flex-start) !important; 
+  text-align: var(--tpl-text-align, left) !important;
+}
+:deep(.contact-line), :deep(.meta-bar), :deep(.contact-info) { justify-content: var(--tpl-header-align, flex-start) !important; }
+:deep(.meta-icon-svg), :deep(.meta-icon-wrap) { display: var(--tpl-meta-icon-display, inline-block) !important; }
+:deep(.avatar-wrap), :deep(.header-avatar) { 
+  border-radius: var(--tpl-avatar-radius, 4px) !important; 
+  display: var(--tpl-avatar-display, block) !important; 
+  margin: var(--tpl-avatar-margin, 0) !important;
+}
+:deep(.meta-label) { display: var(--tpl-meta-label-display, none) !important; margin-right: 2px; }
 .resume-template-workplace {
   box-sizing: border-box;
   width: 100%;
   min-height: 100%;
-  padding: 0 28px 16px;
+  padding: var(--tpl-page-padding-y, 0) var(--tpl-page-padding-x, 28px) 16px;
   color: #1a1a1a;
   background: linear-gradient(160deg, #f8fbff 0%, #f3f6ff 100%);
   position: relative;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  font-family: var(--tpl-font, 'Noto Sans SC', sans-serif);
 }
 
 .resume-template-workplace::after {
@@ -196,7 +229,7 @@ function subLine(values: Array<string | undefined>): string {
   display: flex;
   justify-content: center;
   align-items: flex-end;
-  background: linear-gradient(180deg, #4e86f2 0%, #3d74e4 100%);
+  background: linear-gradient(180deg, var(--tpl-primary, #4e86f2) 0%, var(--tpl-primary-dark, #3d74e4) 100%);
   border-bottom-left-radius: 50% 28%;
   border-bottom-right-radius: 50% 28%;
 }
@@ -204,16 +237,16 @@ function subLine(values: Array<string | undefined>): string {
 .avatar-wrap {
   position: relative;
   left: auto;
-  bottom: -24px;
+  bottom: -20px;
   transform: none;
-  margin: 0 auto -24px;
-  width: 96px;
-  height: 96px;
-  border-radius: 50%;
+  margin: 0 auto -20px;
+  width: 80px;
+  height: 100px;
+  border-radius: 12px;
   overflow: hidden;
   background: #fff;
-  border: 5px solid #fff;
-  box-shadow: 0 8px 24px rgba(61, 116, 228, 0.24);
+  border: 4px solid #fff;
+  box-shadow: 0 6px 20px rgba(61, 116, 228, 0.20);
   z-index: 2;
   isolation: isolate;
 }
@@ -277,7 +310,7 @@ function subLine(values: Array<string | undefined>): string {
   white-space: nowrap;
   overflow-wrap: normal;
   word-break: keep-all;
-  color: #2f67da;
+  color: var(--tpl-primary, #2f67da);
   text-decoration: none;
   font-size: 12px;
 }
@@ -287,7 +320,7 @@ function subLine(values: Array<string | undefined>): string {
 }
 
 .resume-section {
-  margin-bottom: 8px;
+  margin-bottom: var(--tpl-section-gap, 8px);
 }
 
 .resume-section:last-of-type {
@@ -296,9 +329,9 @@ function subLine(values: Array<string | undefined>): string {
 
 .section-title {
   position: relative;
-  margin: 4px 0 4px;
+  margin: var(--tpl-title-gap-top, 4px) 0 var(--tpl-title-gap-bottom, 4px);
   text-align: center;
-  color: #3c78ef;
+  color: var(--tpl-primary, #3c78ef);
   font-size: 18px;
   font-weight: 500;
   line-height: 1.2;
@@ -310,7 +343,7 @@ function subLine(values: Array<string | undefined>): string {
   left: 0;
   right: 0;
   top: 50%;
-  border-top: 1px solid #4f82f3;
+  border-top: 1px solid var(--tpl-primary, #4f82f3);
   opacity: 0.75;
 }
 
@@ -364,7 +397,7 @@ function subLine(values: Array<string | undefined>): string {
 }
 
 .entry-link {
-  color: #2f67da;
+  color: var(--tpl-primary, #2f67da);
   text-decoration: none;
   font-size: 13px;
 }
@@ -373,11 +406,19 @@ function subLine(values: Array<string | undefined>): string {
   text-decoration: underline;
 }
 
+.project-block-title {
+  margin-top: 6px;
+  margin-bottom: 1px;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 500;
+}
+
 .entry-rich {
   margin-top: 3px;
   color: #111827;
-  font-size: 13px;
-  line-height: 1.85;
+  font-size: var(--tpl-font-size, 13px);
+  line-height: var(--tpl-line-height, 1.85);
 }
 
 .empty {

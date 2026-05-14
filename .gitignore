@@ -30,16 +30,38 @@ dist-ssr
 
 # Build output
 *.tsbuildinfo
+build.log
 
 # Cache
 .eslintcache
 
-# Cypress
+# Test
 /cypress/videos/
 /cypress/screenshots/
-
-# Vitest
 __screenshots__/
+test-browser.js
+test-illegal.cjs
+test-regex.mjs
+test-regex-result.txt
+
+# Debug / temp files
+interviews.db
+color_matches.txt
+h2c-files.txt
+h2c-snippet.txt
+ts_error.txt
+jd-*.md
+resume-entry-snapshot.md
+match-tab-before-run.md
+
+# Tool caches
+.vercel
+.serena/
+.playwright-mcp/
+.spec-workflow/
+.codex/
 
 # Vite
 *.timestamp-*-*.mjs
+/public/models/*.vrm
+/public/vrm/

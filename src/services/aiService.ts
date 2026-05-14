@@ -1,3 +1,7 @@
+/**
+ * 简历字段/模块 AI 优化服务
+ * 使用共享 SSE 流工具，避免重复代码
+ */
 import type {
   AwardEntry,
   BasicInfo,
@@ -5,7 +9,11 @@ import type {
   ProjectEntry,
   WorkEntry,
 } from '@/stores/resume'
+import type { ResumeFieldAiContext } from './types/resumeAssistant'
 import { getModuleOutputRules, SYSTEM_PROMPT } from './prompts'
+import { stripHtml, streamWithCallbacks, type AiConfig, type StreamCallbacks } from './stream'
+
+// ── 格式化工具 ──
 
 function formatBasicInfo(info: BasicInfo): string {
   const lines: string[] = []
@@ -25,19 +33,6 @@ function formatBasicInfo(info: BasicInfo): string {
   if (info.github) lines.push(`GitHub：${info.github}`)
   if (info.blog) lines.push(`博客：${info.blog}`)
   return lines.join('\n')
-}
-
-function stripHtml(html: string): string {
-  return html
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/?(p|div|li|ul|ol|h[1-6])[^>]*>/gi, '\n')
-    .replace(/<[^>]*>/g, '')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&amp;/gi, '&')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
 }
 
 function formatEducation(list: EducationEntry[]): string {
@@ -107,6 +102,26 @@ const MODULE_LABELS: Record<string, string> = {
   selfIntro: '个人简介',
 }
 
+const FIELD_LABELS: Record<string, string> = {
+  skills: '技能描述',
+  selfIntro: '自我介绍',
+  description: '描述',
+  introduction: '项目介绍',
+  mainWork: '主要工作',
+}
+
+function getFieldLabel(fieldKey: string): string {
+  return FIELD_LABELS[fieldKey] ?? fieldKey
+}
+
+function formatEntryMeta(entryMeta?: Record<string, string>): string {
+  if (!entryMeta) return '无'
+  const lines = Object.entries(entryMeta)
+    .filter(([, value]) => value?.trim())
+    .map(([key, value]) => `- ${key}：${value.trim()}`)
+  return lines.length > 0 ? lines.join('\n') : '无'
+}
+
 export interface ModuleData {
   basicInfo: BasicInfo
   educationList: EducationEntry[]
@@ -142,16 +157,79 @@ export function getModuleLabel(moduleKey: string): string {
   return MODULE_LABELS[moduleKey] ?? moduleKey
 }
 
+// ── 回调类型兼容（保持外部 API 不变） ──
 
-export interface AiStreamCallbacks {
-  onChunk: (text: string) => void
-  onDone: (fullText: string) => void
-  onError: (error: string) => void
+export type AiStreamCallbacks = StreamCallbacks
+
+// ── 优化版本 ──
+
+export type OptimizeVersion = 'A' | 'B' | 'C'
+
+const OPTIMIZE_VERSION_RULES: Record<OptimizeVersion, string> = {
+  A: '当前选择的是版本A（标准专业版）。请只输出标准专业版结果，整体表达稳妥、专业、可信，尽量贴近原始经历，不要输出其他版本。',
+  B: '当前选择的是版本B（数据驱动版）。请只输出数据驱动版结果，优先补强可量化成果、效率提升、业务影响，不要输出其他版本。',
+  C: '当前选择的是版本C（专家架构版）。请只输出专家架构版结果，突出架构设计、复杂系统、技术决策、跨团队协作与业务价值，不要输出其他版本。',
+}
+
+export interface OptimizeVersionContent {
+  label: string
+  content: string
+}
+
+function buildFieldOptimizePrompt(
+  context: ResumeFieldAiContext,
+  version: OptimizeVersion,
+  outputRules: string,
+): string {
+  const versionRule = OPTIMIZE_VERSION_RULES[version]
+  return `请优化我简历中的字段内容。
+
+当前模块：${context.moduleLabel}
+当前字段：${context.fieldLabel || getFieldLabel(context.fieldKey)}
+字段标识：${context.fieldKey}
+${context.entryTitle ? `当前条目：${context.entryTitle}
+` : ''}${context.targetJob ? `目标岗位：${context.targetJob}
+` : ''}
+当前选择的优化版本：版本${version}
+${versionRule}
+
+条目补充信息：
+${formatEntryMeta(context.entryMeta)}
+
+当前字段内容：
+${stripHtml(context.currentText)}
+
+请严格遵守以下输出要求：
+1. 只输出当前选择版本对应的结果，不要输出版本A/B/C的并列候选。
+2. 输出结构保持为"优化建议"和"优化后内容"两个部分。
+3. 优化后内容必须只针对当前字段本身，不要改写其他模块信息。
+4. 不要添加与当前版本无关的额外说明。
+${outputRules}`
+}
+
+export async function optimizeField(
+  config: AiConfig,
+  context: ResumeFieldAiContext,
+  version: OptimizeVersion,
+  callbacks: AiStreamCallbacks,
+  signal?: AbortSignal,
+): Promise<void> {
+  const currentText = stripHtml(context.currentText)
+  if (!currentText.trim()) {
+    callbacks.onError(`「${context.fieldLabel || getFieldLabel(context.fieldKey)}」内容为空，请先填写内容后再优化。`)
+    return
+  }
+
+  const outputRules = getModuleOutputRules(context.moduleKey)
+  const userMessage = buildFieldOptimizePrompt(context, version, outputRules)
+
+  await streamWithCallbacks(config, SYSTEM_PROMPT, userMessage, callbacks, signal)
 }
 
 export async function optimizeModule(
-  config: { apiUrl: string; apiToken: string; modelName: string },
+  config: AiConfig,
   moduleKey: string,
+  version: OptimizeVersion,
   moduleData: ModuleData,
   callbacks: AiStreamCallbacks,
   signal?: AbortSignal,
@@ -168,99 +246,38 @@ export async function optimizeModule(
     projectNames: moduleData.projectList.map((p) => p.name.trim()).filter(Boolean),
     workCompanyNames: moduleData.workList.map((w) => w.company.trim()).filter(Boolean),
   })
+  const versionRule = OPTIMIZE_VERSION_RULES[version]
   const userMessage = `请优化我简历中的「${label}」模块。
+
+当前选择的优化版本：版本${version}
+${versionRule}
 
 以下是当前内容：
 ${moduleText}
 
 请严格遵守以下输出要求：
+1. 只输出当前选择版本对应的结果，不要输出版本A/B/C的并列候选。
+2. 输出结构保持为"优化建议"和"优化后内容"两个部分。
+3. 不要添加与当前版本无关的额外说明。
 ${outputRules}`
 
-  let baseUrl = config.apiUrl.trim().replace(/\/+$/, '')
-  if (!baseUrl.includes('/v1/chat/completions')) {
-    if (!baseUrl.endsWith('/v1')) {
-      baseUrl += '/v1'
-    }
-    baseUrl += '/chat/completions'
-  }
+  await streamWithCallbacks(config, SYSTEM_PROMPT, userMessage, callbacks, signal)
+}
 
-  try {
-    const response = await fetch(baseUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.apiToken}`,
-      },
-      body: JSON.stringify({
-        model: config.modelName,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: userMessage },
-        ],
-        stream: true,
-      }),
-      signal,
-    })
+// ── AI 响应解析 ──
 
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => '')
-      callbacks.onError(`API 请求失败 (${response.status}): ${errorText || response.statusText}`)
-      return
-    }
-
-    const reader = response.body?.getReader()
-    if (!reader) {
-      callbacks.onError('无法读取 API 响应流')
-      return
-    }
-
-    const decoder = new TextDecoder()
-    let fullText = ''
-    let buffer = ''
-
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() ?? ''
-
-      for (const line of lines) {
-        const trimmed = line.trim()
-        if (!trimmed || !trimmed.startsWith('data:')) continue
-        const data = trimmed.slice(5).trim()
-        if (data === '[DONE]') continue
-
-        try {
-          const parsed = JSON.parse(data)
-          const content = parsed.choices?.[0]?.delta?.content ?? parsed.choices?.[0]?.message?.content
-          if (content) {
-            fullText += content
-            callbacks.onChunk(fullText)
-          }
-        } catch {
-          // Ignore malformed streaming chunks.
-        }
-      }
-    }
-
-    callbacks.onDone(fullText)
-  } catch (err: unknown) {
-    if (err instanceof DOMException && err.name === 'AbortError') {
-      return
-    }
-    const message = err instanceof Error ? err.message : String(err)
-    callbacks.onError(`请求出错: ${message}`)
-  }
+export interface VersionContent {
+  label: string
+  content: string
 }
 
 export interface ParsedAiResponse {
   suggestions: string
   optimizedContent: string
+  versions: VersionContent[]
 }
 
-type ParsedSectionKey = 'suggestions' | 'optimizedContent'
+type ParsedSectionKey = 'suggestions' | 'optimizedContent' | 'versionA' | 'versionB' | 'versionC'
 
 function normalizeSectionLabel(rawLabel: string): ParsedSectionKey | null {
   const normalized = rawLabel
@@ -278,12 +295,22 @@ function normalizeSectionLabel(rawLabel: string): ParsedSectionKey | null {
   ) {
     return 'optimizedContent'
   }
+  // 三版本标题识别
+  if (normalized.includes('版本a') || normalized.includes('标准专业') || normalized.includes('versiona')) {
+    return 'versionA'
+  }
+  if (normalized.includes('版本b') || normalized.includes('数据驱动') || normalized.includes('versionb')) {
+    return 'versionB'
+  }
+  if (normalized.includes('版本c') || normalized.includes('专家架构') || normalized.includes('versionc')) {
+    return 'versionC'
+  }
   return null
 }
 
 function parseSectionHeadingLine(line: string): { key: ParsedSectionKey; inlineContent: string } | null {
   const match = line.match(
-    /^(?:#{1,6}\s*)?(?:\*\*)?\s*(优化建议|Suggestions?|优化后内容|优化后的内容|Optimized Content)\s*(?:\*\*)?\s*(?:[：:]\s*(.*))?$/i,
+    /^(?:#{1,6}\s*)?(?:\*\*)?\s*(优化建议|Suggestions?|优化后内容|优化后的内容|Optimized Content|版本[A-C][：:\s\S]*?|[Vv]ersion\s*[A-C][：:\s\S]*?)\s*(?:\*\*)?\s*(?:[：:]\s*(.*))?$/i,
   )
   if (!match) return null
   const key = normalizeSectionLabel(match[1] ?? '')
@@ -297,13 +324,16 @@ function parseSectionHeadingLine(line: string): { key: ParsedSectionKey; inlineC
 export function parseAiResponse(text: string): ParsedAiResponse {
   const normalized = text.replace(/\r\n/g, '\n').trim()
   if (!normalized) {
-    return { suggestions: '', optimizedContent: '' }
+    return { suggestions: '', optimizedContent: '', versions: [] }
   }
 
   const lines = normalized.split('\n')
   const sections: Record<ParsedSectionKey, string[]> = {
     suggestions: [],
     optimizedContent: [],
+    versionA: [],
+    versionB: [],
+    versionC: [],
   }
 
   let currentSection: ParsedSectionKey | null = null
@@ -326,16 +356,35 @@ export function parseAiResponse(text: string): ParsedAiResponse {
   const suggestions = sections.suggestions.join('\n').trim()
   const optimizedContent = sections.optimizedContent.join('\n').trim()
 
-  if (!suggestions && !optimizedContent) {
-    return {
-      suggestions: '',
-      optimizedContent: normalized,
+  // 构建三版本数组
+  const versionMap: { key: ParsedSectionKey; label: string }[] = [
+    { key: 'versionA', label: '标准专业版' },
+    { key: 'versionB', label: '数据驱动版' },
+    { key: 'versionC', label: '专家架构版' },
+  ]
+  const versions: VersionContent[] = []
+  for (const { key, label } of versionMap) {
+    const content = sections[key].join('\n').trim()
+    if (content) {
+      versions.push({ label, content })
     }
   }
 
+  // 向后兼容：无版本标题时走旧逻辑
+  if (versions.length === 0 && !optimizedContent) {
+    return {
+      suggestions: '',
+      optimizedContent: normalized,
+      versions: [],
+    }
+  }
+
+  // 兼容旧格式：如果没有版本但有 optimizedContent，将其作为 versions[0]
+  const finalOptimized = versions.length > 0 ? (versions[0]?.content ?? '') : optimizedContent
+
   return {
     suggestions,
-    optimizedContent,
+    optimizedContent: finalOptimized,
+    versions,
   }
 }
-

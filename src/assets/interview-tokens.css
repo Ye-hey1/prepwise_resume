@@ -1,0 +1,84 @@
+:root {
+  --iv-shell-bg: linear-gradient(180deg, rgba(250, 252, 255, 0.96) 0%, rgba(239, 244, 251, 0.98) 100%);
+  --iv-shell-panel: rgba(255, 255, 255, 0.88);
+  --iv-shell-panel-strong: rgba(255, 255, 255, 0.96);
+  --iv-shell-panel-muted: rgba(244, 248, 252, 0.92);
+  --iv-shell-border: rgba(43, 123, 184, 0.12);
+  --iv-shell-border-strong: rgba(43, 123, 184, 0.2);
+  --iv-shell-shadow-sm: 0 8px 24px rgba(43, 123, 184, 0.05);
+  --iv-shell-shadow-md: 0 18px 40px rgba(30, 58, 90, 0.09);
+  --iv-shell-shadow-lg: 0 24px 64px rgba(20, 37, 63, 0.12);
+
+  --iv-text-title: #162134;
+  --iv-text-body: #41546d;
+  --iv-text-muted: #7688a1;
+  --iv-text-soft: #96a5b9;
+
+  --iv-brand-50: #edf6fd;
+  --iv-brand-100: #d8eaf8;
+  --iv-brand-200: #bedcf2;
+  --iv-brand-400: #5f9dcc;
+  --iv-brand-500: #2b7bb8;
+  --iv-brand-600: #1b6399;
+  --iv-brand-700: #124b74;
+  --iv-brand-gradient: linear-gradient(135deg, #2b7bb8 0%, #4f91d0 52%, #8bc7d9 100%);
+
+  --iv-accent-cyan: #0ea5b7;
+  --iv-success: #1a8f5e;
+  --iv-warning: #dd8d3a;
+  --iv-danger: #d35d5d;
+
+  --iv-radius-xs: 8px;
+  --iv-radius-sm: 12px;
+  --iv-radius-md: 18px;
+  --iv-radius-lg: 24px;
+  --iv-radius-xl: 30px;
+  --iv-radius-pill: 999px;
+
+  --iv-space-1: 4px;
+  --iv-space-2: 8px;
+  --iv-space-3: 12px;
+  --iv-space-4: 16px;
+  --iv-space-5: 20px;
+  --iv-space-6: 24px;
+  --iv-space-7: 32px;
+  --iv-space-8: 40px;
+
+  --iv-title-xl: 30px;
+  --iv-title-lg: 22px;
+  --iv-title-md: 18px;
+  --iv-title-sm: 15px;
+  --iv-text-sm: 12px;
+  --iv-text-base: 14px;
+  --iv-text-lg: 16px;
+
+  --iv-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --iv-duration-fast: 160ms;
+  --iv-duration-base: 240ms;
+  --iv-duration-slow: 360ms;
+}
+
+:root[data-theme="dark"] {
+  --iv-shell-bg: linear-gradient(180deg, rgba(17, 23, 34, 0.92) 0%, rgba(18, 25, 37, 0.98) 100%);
+  --iv-shell-panel: rgba(28, 36, 50, 0.88);
+  --iv-shell-panel-strong: rgba(30, 39, 54, 0.95);
+  --iv-shell-panel-muted: rgba(23, 30, 43, 0.88);
+  --iv-shell-border: rgba(168, 203, 228, 0.12);
+  --iv-shell-border-strong: rgba(168, 203, 228, 0.2);
+  --iv-shell-shadow-sm: 0 8px 24px rgba(0, 0, 0, 0.22);
+  --iv-shell-shadow-md: 0 18px 40px rgba(0, 0, 0, 0.3);
+  --iv-shell-shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.34);
+
+  --iv-text-title: #edf3fa;
+  --iv-text-body: #b9c6d7;
+  --iv-text-muted: #8ea1b8;
+  --iv-text-soft: #72839b;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --iv-duration-fast: 0.01ms;
+    --iv-duration-base: 0.01ms;
+    --iv-duration-slow: 0.01ms;
+  }
+}

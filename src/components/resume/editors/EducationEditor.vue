@@ -1,10 +1,43 @@
 ﻿<script setup lang="ts">
+import InlineAiRichEditor from '@/components/resume/InlineAiRichEditor.vue'
 import { useResumeStore } from '@/stores/resume'
-import { ref } from 'vue'
-import RichEditor from '@/components/common/RichEditor.vue'
+import { ref, reactive } from 'vue'
+import { validateDateRange } from '@/utils/dateValidation'
 
 const store = useResumeStore()
 const collapsed = ref(false)
+
+const dateErrors = reactive<Record<number, string>>({})
+
+function validateEntryDates(index: number, start: string, end: string) {
+  const result = validateDateRange(start, end)
+  if (result.valid) {
+    delete dateErrors[index]
+  } else {
+    dateErrors[index] = result.message ?? '日期格式有误'
+  }
+}
+
+function buildEducationAiContext(edu: (typeof store.educationList)[number]) {
+  return {
+    moduleKey: 'education' as const,
+    moduleLabel: '教育经历',
+    fieldKey: 'description',
+    fieldLabel: '在校经历',
+    currentText: edu.description,
+    entryId: edu.id,
+    entryTitle: [edu.school, edu.major].filter(Boolean).join(' / '),
+    entryMeta: {
+      学校: edu.school,
+      学院: edu.college,
+      专业: edu.major,
+      学历: edu.degree,
+      时间: [edu.startDate, edu.endDate].filter(Boolean).join(' ~ '),
+      GPA: edu.gpa,
+    },
+    targetJob: store.basicInfo.jobTitle?.trim() || '',
+  }
+}
 </script>
 
 <template>
@@ -64,11 +97,12 @@ const collapsed = ref(false)
           </div>
           <div class="form-group">
             <label class="form-label">开始时间</label>
-            <input v-model="edu.startDate" type="month" class="form-input" />
+            <input v-model="edu.startDate" type="month" class="form-input" :class="{ 'has-error': dateErrors[index] }" @blur="validateEntryDates(index, edu.startDate, edu.endDate)" />
           </div>
           <div class="form-group">
             <label class="form-label">结束时间</label>
-            <input v-model="edu.endDate" type="month" class="form-input" />
+            <input v-model="edu.endDate" type="month" class="form-input" :class="{ 'has-error': dateErrors[index] }" @blur="validateEntryDates(index, edu.startDate, edu.endDate)" />
+            <span v-if="dateErrors[index]" class="form-error">{{ dateErrors[index] }}</span>
           </div>
           <div class="form-group">
             <label class="form-label">学历类型</label>
@@ -86,11 +120,12 @@ const collapsed = ref(false)
         </div>
 
         <div class="form-group form-group-full">
-          <label class="form-label">在校经历</label>
-          <RichEditor
+          <InlineAiRichEditor
             v-model="edu.description"
             :rows="3"
+            label="在校经历"
             placeholder="描述在校期间的重要经历、活动或成就..."
+            :context="buildEducationAiContext(edu)"
           />
         </div>
       </div>
@@ -108,7 +143,7 @@ const collapsed = ref(false)
   margin-bottom: var(--spacing-lg);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
-  background: white;
+  background: var(--bg-card);
   overflow: hidden;
   transition: box-shadow var(--transition-base);
 }
@@ -226,7 +261,7 @@ const collapsed = ref(false)
   border-radius: var(--radius-md);
   font-size: 0.88rem;
   color: var(--text-primary);
-  background: white;
+  background: var(--bg-card);
   transition: all var(--transition-fast);
   outline: none;
 }
@@ -247,7 +282,7 @@ const collapsed = ref(false)
   border-radius: var(--radius-md);
   font-size: 0.88rem;
   color: var(--text-primary);
-  background: white;
+  background: var(--bg-card);
   transition: all var(--transition-fast);
   outline: none;
   resize: vertical;
@@ -288,5 +323,13 @@ const collapsed = ref(false)
 .btn-add-icon {
   font-size: 1.1rem;
   font-weight: 700;
+}
+
+.form-error {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: #e05252;
+  line-height: 1.4;
 }
 </style>

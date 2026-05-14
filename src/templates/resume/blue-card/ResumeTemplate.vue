@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { iconPaths, iconViewBox, isFilledIcon } from '../../shared/metaIcons'
 import { useResumeTemplateData } from '../../shared/useResumeTemplateData'
+import { useTemplateCustomization } from '../../shared/useTemplateCustomization'
 
 const { store, hasAnyContent, lineOneMeta, lineTwoMeta, lineThreeMeta, moduleOrderStyle } = useResumeTemplateData()
+const { cssVars } = useTemplateCustomization()
 </script>
 
 <template>
-  <div class="resume-template-blue-card">
+  <div class="resume-template-blue-card" :style="cssVars">
     <header v-if="store.isModuleVisible('basicInfo')" class="resume-header">
       <div class="header-main">
         <h1 class="name">{{ store.basicInfo.name || '姓名' }}</h1>
@@ -21,7 +23,7 @@ const { store, hasAnyContent, lineOneMeta, lineTwoMeta, lineThreeMeta, moduleOrd
             >
               <path v-for="(d, idx) in iconPaths[item.icon]" :key="`${item.key}-${idx}`" :d="d" />
             </svg>
-            {{ item.text }}
+            <span class="meta-label" v-if="item.label">{{ item.label }}: </span>{{ item.text }}
           </span>
         </div>
 
@@ -35,7 +37,7 @@ const { store, hasAnyContent, lineOneMeta, lineTwoMeta, lineThreeMeta, moduleOrd
             >
               <path v-for="(d, idx) in iconPaths[item.icon]" :key="`${item.key}-${idx}`" :d="d" />
             </svg>
-            {{ item.text }}
+            <span class="meta-label" v-if="item.label">{{ item.label }}: </span>{{ item.text }}
           </span>
         </div>
 
@@ -49,8 +51,8 @@ const { store, hasAnyContent, lineOneMeta, lineTwoMeta, lineThreeMeta, moduleOrd
             >
               <path v-for="(d, idx) in iconPaths[item.icon]" :key="`${item.key}-${idx}`" :d="d" />
             </svg>
-            <a v-if="item.isLink" class="meta-link" :href="item.href" target="_blank" rel="noopener noreferrer">{{ item.text }}</a>
-            <span v-else>{{ item.text }}</span>
+            <a v-if="item.isLink" class="meta-link" :href="item.href" target="_blank" rel="noopener noreferrer"><span class="meta-label" v-if="item.label">{{ item.label }}: </span>{{ item.text }}</a>
+            <span v-else><span class="meta-label" v-if="item.label">{{ item.label }}: </span>{{ item.text }}</span>
           </span>
         </div>
       </div>
@@ -129,14 +131,14 @@ const { store, hasAnyContent, lineOneMeta, lineTwoMeta, lineThreeMeta, moduleOrd
           <span class="entry-date">{{ project.startDate }} ~ {{ project.endDate || '至今' }}</span>
         </div>
         <p v-if="project.link" class="entry-link-row">
-          <a class="entry-link" :href="project.link" target="_blank" rel="noopener noreferrer">{{ project.link }}</a>
+          <a class="entry-link" :href="project.link" target="_blank" rel="noopener noreferrer">项目链接：{{ project.link }}</a>
         </p>
         <div v-if="project.introduction">
-          <p class="project-block-title">项目介绍</p>
+          <p v-if="store.showProjectSubtitles" class="project-block-title">项目介绍</p>
           <div class="entry-rich" v-html="project.introduction"></div>
         </div>
         <div v-if="project.mainWork">
-          <p class="project-block-title">主要工作</p>
+          <p v-if="store.showProjectSubtitles" class="project-block-title">主要工作</p>
           <div class="entry-rich" v-html="project.mainWork"></div>
         </div>
       </article>
@@ -162,7 +164,7 @@ const { store, hasAnyContent, lineOneMeta, lineTwoMeta, lineThreeMeta, moduleOrd
       class="resume-section"
       :style="moduleOrderStyle('selfIntro')"
     >
-      <h2 class="section-title"><span class="section-badge">个人简介</span><span class="section-line"></span></h2>
+      <h2 class="section-title"><span class="section-badge">个人简介</span></h2>
       <div class="entry-rich" v-html="store.selfIntro"></div>
     </section>
 
@@ -173,15 +175,37 @@ const { store, hasAnyContent, lineOneMeta, lineTwoMeta, lineThreeMeta, moduleOrd
 </template>
 
 <style scoped>
+/* 全局动态布局引擎支持 */
+:deep(.resume-header), :deep(.header) { 
+  display: flex !important;
+  flex-direction: var(--tpl-header-dir, row) !important;
+  justify-content: var(--tpl-header-justify, space-between) !important; 
+  align-items: var(--tpl-header-align-items, flex-start) !important;
+}
+:deep(.header-main), :deep(.name-row) { 
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: var(--tpl-header-align, flex-start) !important; 
+  text-align: var(--tpl-text-align, left) !important;
+}
+:deep(.contact-line), :deep(.meta-bar), :deep(.contact-info) { justify-content: var(--tpl-header-align, flex-start) !important; }
+:deep(.meta-icon-svg), :deep(.meta-icon-wrap) { display: var(--tpl-meta-icon-display, inline-block) !important; }
+:deep(.avatar-wrap), :deep(.header-avatar) { 
+  border-radius: var(--tpl-avatar-radius, 4px) !important; 
+  display: var(--tpl-avatar-display, block) !important; 
+  margin: var(--tpl-avatar-margin, 0) !important;
+}
+:deep(.meta-label) { display: var(--tpl-meta-label-display, none) !important; margin-right: 2px; }
 .resume-template-blue-card {
   box-sizing: border-box;
   width: 100%;
   min-height: 100%;
-  padding: 28px 24px;
+  padding: var(--tpl-page-padding-y, 28px) var(--tpl-page-padding-x, 24px);
   color: #000;
   display: flex;
   flex-direction: column;
   background: #ffffff;
+  font-family: var(--tpl-font, 'Noto Sans SC', sans-serif);
 }
 
 /* ─── Header ─── */
@@ -239,7 +263,7 @@ const { store, hasAnyContent, lineOneMeta, lineTwoMeta, lineThreeMeta, moduleOrd
   width: 14px;
   height: 14px;
   fill: none;
-  stroke: #3b82f6;
+  stroke: var(--tpl-primary, #3b82f6);
   stroke-width: 1.75;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -248,7 +272,7 @@ const { store, hasAnyContent, lineOneMeta, lineTwoMeta, lineThreeMeta, moduleOrd
 }
 
 .meta-icon-fill {
-  fill: #3b82f6;
+  fill: var(--tpl-primary, #3b82f6);
   stroke: none;
 }
 
@@ -270,7 +294,7 @@ const { store, hasAnyContent, lineOneMeta, lineTwoMeta, lineThreeMeta, moduleOrd
 
 /* ─── Section ─── */
 .resume-section {
-  margin-bottom: 10px;
+  margin-bottom: var(--tpl-section-gap, 10px);
 }
 
 .resume-section:last-of-type {
@@ -279,7 +303,7 @@ const { store, hasAnyContent, lineOneMeta, lineTwoMeta, lineThreeMeta, moduleOrd
 
 /* ─── Section Title — Blue Pill Badge ─── */
 .section-title {
-  margin: 0 0 8px;
+  margin: var(--tpl-title-gap-top, 0) 0 var(--tpl-title-gap-bottom, 8px);
   font-size: 16px;
   line-height: 1;
   display: flex;
@@ -289,7 +313,7 @@ const { store, hasAnyContent, lineOneMeta, lineTwoMeta, lineThreeMeta, moduleOrd
 
 .section-badge {
   display: inline-block;
-  background: #2855a0;
+  background: var(--tpl-primary, #2855a0);
   color: #ffffff;
   font-size: 16px;
   font-weight: 700;
@@ -391,7 +415,7 @@ const { store, hasAnyContent, lineOneMeta, lineTwoMeta, lineThreeMeta, moduleOrd
 }
 
 .entry-link {
-  color: #3b82f6;
+  color: var(--tpl-primary, #3b82f6);
   font-size: 14px;
   text-decoration: none;
 }
@@ -401,11 +425,19 @@ const { store, hasAnyContent, lineOneMeta, lineTwoMeta, lineThreeMeta, moduleOrd
 }
 
 /* ─── Rich Text ─── */
+.project-block-title {
+  margin-top: 6px;
+  margin-bottom: 1px;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 500;
+}
+
 .entry-rich {
   margin-top: 3px;
   color: #000;
-  font-size: 12px;
-  line-height: 1.75;
+  font-size: var(--tpl-font-size, 12px);
+  line-height: var(--tpl-line-height, 1.75);
 }
 
 .empty {

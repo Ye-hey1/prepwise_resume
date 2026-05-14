@@ -1,10 +1,19 @@
 ﻿<script setup lang="ts">
+import InlineAiRichEditor from '@/components/resume/InlineAiRichEditor.vue'
 import { useResumeStore } from '@/stores/resume'
-import { ref } from 'vue'
-import RichEditor from '@/components/common/RichEditor.vue'
+import { computed, ref } from 'vue'
 
 const store = useResumeStore()
 const collapsed = ref(false)
+
+const skillsAiContext = computed(() => ({
+  moduleKey: 'skills' as const,
+  moduleLabel: '专业技能',
+  fieldKey: 'skills',
+  fieldLabel: '技能描述',
+  currentText: store.skills,
+  targetJob: store.basicInfo.jobTitle?.trim() || '',
+}))
 </script>
 
 <template>
@@ -20,11 +29,12 @@ const collapsed = ref(false)
 
     <div v-show="!collapsed" class="section-body">
       <div class="form-group">
-        <label class="form-label">技能描述</label>
-        <RichEditor
+        <InlineAiRichEditor
           v-model="store.skills"
           :rows="8"
+          label="技能描述"
           placeholder="请描述您的专业技能，每行一条..."
+          :context="skillsAiContext"
         />
       </div>
     </div>
@@ -36,7 +46,7 @@ const collapsed = ref(false)
   margin-bottom: var(--spacing-lg);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
-  background: white;
+  background: var(--bg-card);
   overflow: hidden;
   transition: box-shadow var(--transition-base);
 }
@@ -114,7 +124,7 @@ const collapsed = ref(false)
 
 .form-textarea:focus {
   border-color: var(--primary-400);
-  background: white;
+  background: var(--bg-card);
   box-shadow: 0 0 0 3px var(--primary-50);
 }
 

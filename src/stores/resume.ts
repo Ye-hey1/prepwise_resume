@@ -73,6 +73,22 @@ export interface ModuleConfig {
   visible: boolean
 }
 
+export interface TemplateCustomization {
+  primaryColor?: string
+  accentColor?: string
+  fontFamily?: string
+  fontSize?: number
+  sectionSpacing?: number
+  pagePaddingX?: number
+  pagePaddingY?: number
+  titleMarginTop?: number
+  titleMarginBottom?: number
+  lineHeight?: number
+  layoutAlign?: 'left' | 'center' | 'right' | 'space-between'
+  metaDisplay?: 'text' | 'icon' | 'pure'
+  avatarShape?: 'rounded' | 'circle' | 'hidden'
+}
+
 type MoveDirection = 'up' | 'down'
 const DEFAULT_MODULE_ORDER = [
   'basicInfo',
@@ -167,11 +183,15 @@ export const useResumeStore = defineStore('resume', () => {
 
   const awardList = reactive<AwardEntry[]>([])
   const selfIntro = ref('')
+  const showProjectSubtitles = ref(true)
   const selectedTemplateKey = ref<ResumeTemplateKey>('default')
+  const templateCustomizations = reactive<Record<string, TemplateCustomization>>({})
   const nextAutoSaveAt = ref<number | null>(null)
   const lastSavedAt = ref<number | null>(null)
   const lastSaveMode = ref<'auto' | 'manual' | null>(null)
   const isSaving = ref(false)
+  const importFeedbackText = ref('')
+  const importFeedbackVisible = ref(false)
 
   function toggleModule(key: string) {
     const mod = modules.find((m) => m.key === key)
@@ -316,6 +336,120 @@ export const useResumeStore = defineStore('resume', () => {
     if (idx > -1) awardList.splice(idx, 1)
   }
 
+  function getCustomization(templateKey: string): TemplateCustomization {
+    return templateCustomizations[templateKey] ?? {}
+  }
+
+  function setCustomization(templateKey: string, custom: Partial<TemplateCustomization>) {
+    const existing = templateCustomizations[templateKey] ?? {}
+    templateCustomizations[templateKey] = { ...existing, ...custom }
+  }
+
+  function resetCustomization(templateKey: string) {
+    delete templateCustomizations[templateKey]
+  }
+
+  // ── JD 分析结果跳转到编辑模块 ──
+  const pendingScrollToModule = ref<string | null>(null)
+
+  function requestScrollToModule(moduleKey: string) {
+    pendingScrollToModule.value = moduleKey
+  }
+
+  function clearScrollToModule() {
+    pendingScrollToModule.value = null
+  }
+
+  // ── JD 优化建议应用回写 ──
+  type SuggestionSection = 'skills' | 'selfIntro' | 'basicInfo' | 'workExperience' | 'projectExperience'
+
+  function applySuggestionToStore(section: string, suggestedText: string): boolean {
+    if (!suggestedText.trim()) return false
+
+    let updated = false
+    const logPrefix = `[Apply Suggestion: ${section}]`
+
+    try {
+      switch (section as SuggestionSection) {
+        case 'skills':
+          skills.value = suggestedText
+          updated = true
+          break
+        case 'selfIntro':
+          selfIntro.value = suggestedText
+          updated = true
+          break
+        case 'basicInfo': {
+          // 智能分词：尝试提取 JobTitle
+          const lines = suggestedText.split('\n').filter((l) => l.trim()) as string[] & { 0: string }
+          if (lines.length === 1 && !lines[0].includes('：') && !lines[0].includes(':')) {
+             basicInfo.jobTitle = lines[0].trim()
+             updated = true
+          } else {
+            for (const line of lines) {
+              const sep = line.includes(':') ? ':' : '：'
+              const [rawKey, ...rest] = line.split(sep)
+              const val = rest.join(sep).trim()
+              const key = rawKey?.trim() ?? ''
+              
+              // 匹配中英文键名映射
+              const keyMap: Record<string, keyof BasicInfo> = {
+                '意向岗位': 'jobTitle', '目标岗位': 'jobTitle', 'jobTitle': 'jobTitle',
+                '求职意向': 'jobTitle', '姓名': 'name', '电话': 'phone'
+              }
+              const targetKey = keyMap[key] || (key in basicInfo ? key as keyof BasicInfo : null)
+              
+              if (targetKey && val) {
+                ;(basicInfo as any)[targetKey] = val
+                updated = true
+              }
+            }
+          }
+          break
+        }
+        case 'workExperience': {
+          // 应用至第一条（最相关的）经历
+          if (workList.length === 0) {
+            addWork()
+          }
+          const target = workList[0]
+          if (target) {
+            target.description = suggestedText
+            updated = true
+          }
+          break
+        }
+        case 'projectExperience': {
+          if (projectList.length === 0) {
+            addProject()
+          }
+          const target = projectList[0]
+          if (target) {
+            target.mainWork = suggestedText
+            updated = true
+          }
+          break
+        }
+        default:
+          console.warn(`${logPrefix} Unsupported section`)
+          return false
+      }
+    } catch (e) {
+      console.error(`${logPrefix} Failed`, e)
+      return false
+    }
+
+    if (updated) {
+      saveToStorage('auto')
+      showImportFeedback(`已成功应用至「${modules.find(m => m.key === section)?.label || section}」模块`)
+    }
+    return updated
+  }
+
+  function canApplySuggestion(section: string): boolean {
+    return ['skills', 'selfIntro', 'basicInfo', 'workExperience', 'projectExperience'].includes(section)
+  }
+
   const STORAGE_KEY = 'resume-builder-data'
   const AUTO_SAVE_DELAY_MS = 500
   const SAVE_LOADING_MIN_MS = 900
@@ -329,6 +463,28 @@ export const useResumeStore = defineStore('resume', () => {
       isSaving.value = false
       saveLoadingTimer = null
     }, SAVE_LOADING_MIN_MS)
+  }
+
+  let importFeedbackTimer: ReturnType<typeof setTimeout> | null = null
+
+  function showImportFeedback(message: string, duration = 2600) {
+    importFeedbackText.value = message
+    importFeedbackVisible.value = true
+    if (importFeedbackTimer) clearTimeout(importFeedbackTimer)
+    importFeedbackTimer = setTimeout(() => {
+      importFeedbackVisible.value = false
+      importFeedbackText.value = ''
+      importFeedbackTimer = null
+    }, duration)
+  }
+
+  function clearImportFeedback() {
+    if (importFeedbackTimer) {
+      clearTimeout(importFeedbackTimer)
+      importFeedbackTimer = null
+    }
+    importFeedbackVisible.value = false
+    importFeedbackText.value = ''
   }
 
   function saveToStorage(mode: 'auto' | 'manual' = 'manual') {
@@ -347,6 +503,8 @@ export const useResumeStore = defineStore('resume', () => {
       projectList: projectList.map((p) => ({ ...p })),
       awardList: awardList.map((a) => ({ ...a })),
       selfIntro: selfIntro.value,
+      templateCustomizations: { ...templateCustomizations },
+      showProjectSubtitles: showProjectSubtitles.value,
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
     nextAutoSaveAt.value = null
@@ -404,6 +562,12 @@ export const useResumeStore = defineStore('resume', () => {
         awardList.splice(0, awardList.length, ...data.awardList)
       }
       if (data.selfIntro !== undefined) selfIntro.value = data.selfIntro
+      if (data.showProjectSubtitles !== undefined) showProjectSubtitles.value = data.showProjectSubtitles
+      if (data.templateCustomizations) {
+        Object.keys(data.templateCustomizations).forEach((key) => {
+          templateCustomizations[key] = data.templateCustomizations[key]
+        })
+      }
     } catch (e) {
       console.warn('Failed to load resume data from localStorage', e)
     }
@@ -421,8 +585,10 @@ export const useResumeStore = defineStore('resume', () => {
       () => JSON.stringify(projectList),
       () => JSON.stringify(awardList),
       selfIntro,
+      showProjectSubtitles,
       selectedTemplateKey,
       () => JSON.stringify(modules),
+      () => JSON.stringify(templateCustomizations),
     ],
     () => {
       if (saveTimer) clearTimeout(saveTimer)
@@ -435,9 +601,97 @@ export const useResumeStore = defineStore('resume', () => {
     { deep: true }
   )
 
+  // 导入数据 — 参考 loadFromStorage 的数据恢复模式
+  function importData(data: {
+    basicInfo?: Partial<BasicInfo>
+    educationList?: EducationEntry[]
+    skills?: string
+    workList?: WorkEntry[]
+    projectList?: ProjectEntry[]
+    awardList?: AwardEntry[]
+    selfIntro?: string
+  }): void {
+    if (data.basicInfo) Object.assign(basicInfo, data.basicInfo)
+    if (data.educationList)
+      educationList.splice(
+        0,
+        educationList.length,
+        ...data.educationList.map((e) => ({ ...e, id: e.id || genId() })),
+      )
+    if (data.skills !== undefined) skills.value = data.skills
+    if (data.workList)
+      workList.splice(
+        0,
+        workList.length,
+        ...data.workList.map((w) => ({ ...w, id: w.id || genId() })),
+      )
+    if (data.projectList)
+      projectList.splice(
+        0,
+        projectList.length,
+        ...data.projectList.map((p) => ({ ...p, id: p.id || genId() })),
+      )
+    if (data.awardList)
+      awardList.splice(
+        0,
+        awardList.length,
+        ...data.awardList.map((a) => ({ ...a, id: a.id || genId() })),
+      )
+    if (data.selfIntro !== undefined) selfIntro.value = data.selfIntro
+  }
+
+  // 清空所有数据 — 用于导入前重置
+  function clearAllData(): void {
+    const defaultBasicInfo: BasicInfo = {
+      name: '',
+      phone: '',
+      email: '',
+      age: '',
+      gender: '',
+      location: '',
+      jobTitle: '',
+      educationLevel: '',
+      avatar: '',
+      workYears: '',
+      currentStatus: '',
+      expectedLocation: '',
+      expectedSalary: '',
+      website: '',
+      wechat: '',
+      currentCity: '',
+      github: '',
+      blog: '',
+    }
+    Object.assign(basicInfo, defaultBasicInfo)
+    educationList.splice(0, educationList.length, { id: genId(), school: '', college: '', major: '', degree: '', startDate: '', endDate: '', gpa: '', description: '', type: '', location: '' })
+    skills.value = ''
+    workList.splice(0, workList.length, { id: genId(), company: '', department: '', position: '', startDate: '', endDate: '', location: '', description: '' })
+    projectList.splice(0, projectList.length, { id: genId(), name: '', role: '', startDate: '', endDate: '', link: '', introduction: '', mainWork: '' })
+    awardList.splice(0, awardList.length)
+    selfIntro.value = ''
+  }
+
+  // 导出为 JSON 兼容的纯对象
+  function exportToJSON(): Record<string, unknown> {
+    return {
+      basicInfo: { ...basicInfo },
+      educationList: educationList.map((e) => ({ ...e })),
+      skills: skills.value,
+      workList: workList.map((w) => ({ ...w })),
+      projectList: projectList.map((p) => ({ ...p })),
+      awardList: awardList.map((a) => ({ ...a })),
+      selfIntro: selfIntro.value,
+      showProjectSubtitles: showProjectSubtitles.value,
+      modules: modules.map((m) => ({ ...m })),
+      selectedTemplateKey: selectedTemplateKey.value,
+      templateCustomizations: { ...templateCustomizations },
+    }
+  }
+
   return {
     modules,
     selectedTemplateKey,
+    templateCustomizations,
     basicInfo,
     educationList,
     skills,
@@ -445,6 +699,12 @@ export const useResumeStore = defineStore('resume', () => {
     projectList,
     awardList,
     selfIntro,
+    showProjectSubtitles,
+    importFeedbackText,
+    importFeedbackVisible,
+    importData,
+    clearAllData,
+    exportToJSON,
     toggleModule,
     setTemplate,
     canMoveModule,
@@ -461,11 +721,21 @@ export const useResumeStore = defineStore('resume', () => {
     removeProject,
     addAward,
     removeAward,
+    getCustomization,
+    setCustomization,
+    resetCustomization,
+    showImportFeedback,
+    clearImportFeedback,
     saveToStorage,
     autoSaveDelayMs: AUTO_SAVE_DELAY_MS,
     nextAutoSaveAt,
     lastSavedAt,
     lastSaveMode,
     isSaving,
+    pendingScrollToModule,
+    requestScrollToModule,
+    clearScrollToModule,
+    applySuggestionToStore,
+    canApplySuggestion,
   }
 })

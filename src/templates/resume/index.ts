@@ -6,6 +6,7 @@ import { BLUE_SPLIT_PRO_TEMPLATE } from './blue-split-pro/template'
 import { DEFAULT_TEMPLATE } from './default/template'
 import { GREEN_ICON_LINEAR_TEMPLATE } from './green-icon-linear/template'
 import { WORKPLACE_GENERAL_TEMPLATE } from './workplace-general/template'
+import ProductManagerTemplate from './product-manager/template'
 import type { ResumeTemplateDefinition, ResumeTemplateKey } from './types'
 
 export type { ResumeTemplateDefinition, ResumeTemplateKey, ResumeTemplateModel } from './types'
@@ -45,6 +46,7 @@ export const RESUME_TEMPLATES = buildTemplateRegistry([
   BLUE_SIDEBAR_CAREER_TEMPLATE,
   BLUE_SPLIT_PRO_TEMPLATE,
   BLUE_CARD_TEMPLATE,
+  ProductManagerTemplate,
 ])
 
 const TEMPLATE_MAP = RESUME_TEMPLATES.reduce<Record<string, ResumeTemplateDefinition>>((acc, template) => {

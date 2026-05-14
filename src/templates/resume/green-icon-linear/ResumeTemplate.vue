@@ -2,8 +2,10 @@
 import { computed } from 'vue'
 import { iconPaths, iconViewBox, isFilledIcon, toHref, type MetaIconKey } from '../../shared/metaIcons'
 import { useResumeTemplateData } from '../../shared/useResumeTemplateData'
+import { useTemplateCustomization } from '../../shared/useTemplateCustomization'
 
 const { store, hasAnyContent, lineOneMeta, lineTwoMeta, lineThreeMeta, moduleOrderStyle } = useResumeTemplateData()
+const { cssVars } = useTemplateCustomization()
 
 const sectionIconMap: Record<'education' | 'skills' | 'workExperience' | 'projectExperience' | 'awards' | 'selfIntro', MetaIconKey> = {
   education: 'education',
@@ -21,6 +23,7 @@ const lineThreeWithLocation = computed(() => {
     items.unshift({
       key: 'locationRaw',
       icon: 'location' as MetaIconKey,
+      label: '所在地',
       text: locationText,
       isLink: false,
       href: '',
@@ -42,7 +45,7 @@ function projectHref(link: string): string {
 </script>
 
 <template>
-  <div class="resume-template-green-icon-linear">
+  <div class="resume-template-green-icon-linear" :style="cssVars">
     <div class="top-accent"></div>
     <div class="resume-body">
       <header v-if="store.isModuleVisible('basicInfo')" class="resume-header">
@@ -61,7 +64,7 @@ function projectHref(link: string): string {
                   <path v-for="(d, idx) in iconPaths[item.icon]" :key="`${item.key}-${idx}`" :d="d" />
                 </svg>
               </span>
-              <span>{{ item.text }}</span>
+              <span><span class="meta-label" v-if="item.label">{{ item.label }}: </span>{{ item.text }}</span>
             </span>
           </div>
 
@@ -77,7 +80,7 @@ function projectHref(link: string): string {
                   <path v-for="(d, idx) in iconPaths[item.icon]" :key="`${item.key}-${idx}`" :d="d" />
                 </svg>
               </span>
-              <span>{{ item.text }}</span>
+              <span><span class="meta-label" v-if="item.label">{{ item.label }}: </span>{{ item.text }}</span>
             </span>
           </div>
 
@@ -93,8 +96,8 @@ function projectHref(link: string): string {
                   <path v-for="(d, idx) in iconPaths[item.icon]" :key="`${item.key}-${idx}`" :d="d" />
                 </svg>
               </span>
-              <a v-if="item.isLink" class="meta-link" :href="item.href" target="_blank" rel="noopener noreferrer">{{ item.text }}</a>
-              <span v-else>{{ item.text }}</span>
+              <a v-if="item.isLink" class="meta-link" :href="item.href" target="_blank" rel="noopener noreferrer"><span class="meta-label" v-if="item.label">{{ item.label }}: </span>{{ item.text }}</a>
+              <span v-else><span class="meta-label" v-if="item.label">{{ item.label }}: </span>{{ item.text }}</span>
             </span>
           </div>
         </div>
@@ -246,20 +249,20 @@ function projectHref(link: string): string {
               <div class="entry-main">
                 <p class="entry-title">
                   <strong>{{ project.name }}</strong>
+                  <span v-if="project.role">{{ project.role }}</span>
                 </p>
-                <p v-if="project.role" class="entry-subline">{{ project.role }}</p>
               </div>
               <span class="entry-date">{{ project.startDate }} - {{ project.endDate || '至今' }}</span>
             </div>
             <p v-if="project.link" class="entry-link-row">
-              <a class="entry-link" :href="projectHref(project.link)" target="_blank" rel="noopener noreferrer">{{ project.link }}</a>
+              <a class="entry-link" :href="projectHref(project.link)" target="_blank" rel="noopener noreferrer">项目链接：{{ project.link }}</a>
             </p>
             <div v-if="project.introduction">
-              <p class="project-block-title">项目介绍</p>
+              <p v-if="store.showProjectSubtitles" class="project-block-title">项目介绍</p>
               <div class="entry-rich" v-html="project.introduction"></div>
             </div>
             <div v-if="project.mainWork">
-              <p class="project-block-title">主要工作</p>
+              <p v-if="store.showProjectSubtitles" class="project-block-title">主要工作</p>
               <div class="entry-rich" v-html="project.mainWork"></div>
             </div>
           </article>
@@ -306,6 +309,27 @@ function projectHref(link: string): string {
 </template>
 
 <style scoped>
+/* 全局动态布局引擎支持 */
+:deep(.resume-header), :deep(.header) { 
+  display: flex !important;
+  flex-direction: var(--tpl-header-dir, row) !important;
+  justify-content: var(--tpl-header-justify, space-between) !important; 
+  align-items: var(--tpl-header-align-items, flex-start) !important;
+}
+:deep(.header-main), :deep(.name-row) { 
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: var(--tpl-header-align, flex-start) !important; 
+  text-align: var(--tpl-text-align, left) !important;
+}
+:deep(.contact-line), :deep(.meta-bar), :deep(.contact-info) { justify-content: var(--tpl-header-align, flex-start) !important; }
+:deep(.meta-icon-svg), :deep(.meta-icon-wrap) { display: var(--tpl-meta-icon-display, inline-block) !important; }
+:deep(.avatar-wrap), :deep(.header-avatar) { 
+  border-radius: var(--tpl-avatar-radius, 4px) !important; 
+  display: var(--tpl-avatar-display, block) !important; 
+  margin: var(--tpl-avatar-margin, 0) !important;
+}
+:deep(.meta-label) { display: var(--tpl-meta-label-display, none) !important; margin-right: 2px; }
 .resume-template-green-icon-linear {
   position: relative;
   box-sizing: border-box;
@@ -316,6 +340,7 @@ function projectHref(link: string): string {
   color: #1f2933;
   background: #edf2f5;
   overflow: hidden;
+  font-family: var(--tpl-font, 'Noto Sans SC', sans-serif);
 }
 
 .resume-template-green-icon-linear::before {
@@ -334,7 +359,7 @@ function projectHref(link: string): string {
 
 .top-accent {
   height: 18px;
-  background: linear-gradient(90deg, #0b7f7d 0%, #148f89 55%, #1a9e98 100%);
+  background: linear-gradient(90deg, var(--tpl-primary, #0b7f7d) 0%, var(--tpl-primary, #148f89) 55%, var(--tpl-primary, #1a9e98) 100%);
   order: 0;
   z-index: 1;
 }
@@ -344,7 +369,7 @@ function projectHref(link: string): string {
   z-index: 1;
   display: flex;
   flex-direction: column;
-  padding: 12px 20px 20px;
+  padding: var(--tpl-page-padding-y, 12px) var(--tpl-page-padding-x, 20px) 20px;
 }
 
 .resume-header {
@@ -397,7 +422,7 @@ function projectHref(link: string): string {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #198e89;
+  background: var(--tpl-primary, #198e89);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -420,7 +445,7 @@ function projectHref(link: string): string {
 }
 
 .meta-link {
-  color: #198e89;
+  color: var(--tpl-primary, #198e89);
   text-decoration: none;
   word-break: break-all;
 }
@@ -445,17 +470,17 @@ function projectHref(link: string): string {
 }
 
 .resume-section {
-  margin-bottom: 8px;
+  margin-bottom: var(--tpl-section-gap, 8px);
 }
 
 .section-title {
-  margin: 0 0 6px;
+  margin: var(--tpl-title-gap-top, 0) 0 var(--tpl-title-gap-bottom, 6px);
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 20px;
   font-weight: 700;
-  color: #198e89;
+  color: var(--tpl-primary, #198e89);
   line-height: 1.25;
 }
 
@@ -463,7 +488,7 @@ function projectHref(link: string): string {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: #198e89;
+  background: var(--tpl-primary, #198e89);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -567,7 +592,7 @@ function projectHref(link: string): string {
 }
 
 .entry-link {
-  color: #198e89;
+  color: var(--tpl-primary, #198e89);
   text-decoration: none;
   font-size: 14px;
   word-break: break-all;
@@ -577,10 +602,18 @@ function projectHref(link: string): string {
   text-decoration: underline;
 }
 
+.project-block-title {
+  margin-top: 6px;
+  margin-bottom: 1px;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 500;
+}
+
 .entry-rich {
   margin-top: 3px;
   color: #1f2933;
-  font-size: 12px;
+  font-size: var(--tpl-font-size, 12px);
   line-height: 1.65;
 }
 

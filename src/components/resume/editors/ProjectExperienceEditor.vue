@@ -1,10 +1,46 @@
 ﻿<script setup lang="ts">
+import InlineAiRichEditor from '@/components/resume/InlineAiRichEditor.vue'
 import { useResumeStore } from '@/stores/resume'
-import { ref } from 'vue'
-import RichEditor from '@/components/common/RichEditor.vue'
+import { ref, reactive } from 'vue'
+import { validateDateRange } from '@/utils/dateValidation'
 
 const store = useResumeStore()
 const collapsed = ref(false)
+
+const dateErrors = reactive<Record<number, string>>({})
+
+function validateEntryDates(index: number, start: string, end: string) {
+  const result = validateDateRange(start, end)
+  if (result.valid) {
+    delete dateErrors[index]
+  } else {
+    dateErrors[index] = result.message ?? '日期格式有误'
+  }
+}
+
+function buildProjectAiContext(
+  proj: (typeof store.projectList)[number],
+  fieldKey: 'introduction' | 'mainWork',
+) {
+  const fieldLabel = fieldKey === 'introduction' ? '项目介绍' : '主要工作'
+  return {
+    moduleKey: 'projectExperience' as const,
+    moduleLabel: '项目经历',
+    fieldKey,
+    fieldLabel,
+    currentText: proj[fieldKey],
+    entryId: proj.id,
+    entryTitle: [proj.name, proj.role].filter(Boolean).join(' / '),
+    entryMeta: {
+      项目名称: proj.name,
+      角色: proj.role,
+      时间: [proj.startDate, proj.endDate].filter(Boolean).join(' ~ '),
+      链接: proj.link,
+      项目介绍: fieldKey === 'mainWork' ? proj.introduction : '',
+    },
+    targetJob: store.basicInfo.jobTitle?.trim() || '',
+  }
+}
 </script>
 
 <template>
@@ -46,11 +82,12 @@ const collapsed = ref(false)
           </div>
           <div class="form-group">
             <label class="form-label">开始时间</label>
-            <input v-model="proj.startDate" type="month" class="form-input" />
+            <input v-model="proj.startDate" type="month" class="form-input" :class="{ 'has-error': dateErrors[index] }" @blur="validateEntryDates(index, proj.startDate, proj.endDate)" />
           </div>
           <div class="form-group">
             <label class="form-label">结束时间</label>
-            <input v-model="proj.endDate" type="month" class="form-input" />
+            <input v-model="proj.endDate" type="month" class="form-input" :class="{ 'has-error': dateErrors[index] }" @blur="validateEntryDates(index, proj.startDate, proj.endDate)" />
+            <span v-if="dateErrors[index]" class="form-error">{{ dateErrors[index] }}</span>
           </div>
           <div class="form-group span-2">
             <label class="form-label">项目链接</label>
@@ -59,19 +96,21 @@ const collapsed = ref(false)
         </div>
 
         <div class="form-group form-group-full">
-          <label class="form-label">项目介绍</label>
-          <RichEditor
+          <InlineAiRichEditor
             v-model="proj.introduction"
             :rows="3"
+            label="项目介绍"
             placeholder="描述项目背景、技术栈、主要功能..."
+            :context="buildProjectAiContext(proj, 'introduction')"
           />
         </div>
         <div class="form-group form-group-full">
-          <label class="form-label">主要工作</label>
-          <RichEditor
+          <InlineAiRichEditor
             v-model="proj.mainWork"
             :rows="5"
+            label="主要工作"
             placeholder="描述你的职责、技术亮点和成果..."
+            :context="buildProjectAiContext(proj, 'mainWork')"
           />
         </div>
       </div>
@@ -89,7 +128,7 @@ const collapsed = ref(false)
   margin-bottom: var(--spacing-lg);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
-  background: white;
+  background: var(--bg-card);
   overflow: hidden;
   transition: box-shadow var(--transition-base);
 }
@@ -211,7 +250,7 @@ const collapsed = ref(false)
   border-radius: var(--radius-md);
   font-size: 0.88rem;
   color: var(--text-primary);
-  background: white;
+  background: var(--bg-card);
   transition: all var(--transition-fast);
   outline: none;
 }
@@ -232,7 +271,7 @@ const collapsed = ref(false)
   border-radius: var(--radius-md);
   font-size: 0.88rem;
   color: var(--text-primary);
-  background: white;
+  background: var(--bg-card);
   transition: all var(--transition-fast);
   outline: none;
   resize: vertical;
@@ -273,5 +312,13 @@ const collapsed = ref(false)
 .btn-add-icon {
   font-size: 1.1rem;
   font-weight: 700;
+}
+
+.form-error {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: #e05252;
+  line-height: 1.4;
 }
 </style>

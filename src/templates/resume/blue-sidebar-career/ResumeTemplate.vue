@@ -1,9 +1,11 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed } from 'vue'
 import { toHref } from '../../shared/metaIcons'
 import { useResumeTemplateData } from '../../shared/useResumeTemplateData'
+import { useTemplateCustomization } from '../../shared/useTemplateCustomization'
 
 const { store, hasAnyContent, moduleOrderStyle } = useResumeTemplateData()
+const { cssVars } = useTemplateCustomization()
 
 const contactItems = computed(() => {
   const items = [
@@ -65,7 +67,7 @@ function subLine(values: Array<string | undefined>): string {
 </script>
 
 <template>
-  <div class="resume-template-blue-sidebar">
+  <div class="resume-template-blue-sidebar" :style="cssVars">
     <aside class="sidebar">
       <div class="identity">
         <div class="avatar-wrap">
@@ -94,14 +96,14 @@ function subLine(values: Array<string | undefined>): string {
       <section class="side-block" v-if="linkItems.length">
         <h3>个人链接</h3>
         <a v-for="item in linkItems" :key="item.key" :href="item.href" target="_blank" rel="noopener noreferrer">
-          <span>{{ item.label }}</span>{{ item.text }}
+          <span>{{ item.label }}</span><span class="meta-label" v-if="item.label">{{ item.label }}: </span>{{ item.text }}
         </a>
       </section>
     </aside>
 
     <main class="content">
       <section v-if="store.isModuleVisible('selfIntro') && store.selfIntro" class="resume-section" :style="moduleOrderStyle('selfIntro')">
-        <h2 class="section-title"><i></i>个人总结</h2>
+        <h2 class="section-title"><i></i>个人简介</h2>
         <div class="entry-rich" v-html="store.selfIntro"></div>
       </section>
 
@@ -129,15 +131,23 @@ function subLine(values: Array<string | undefined>): string {
         <h2 class="section-title"><i></i>项目经历</h2>
         <article v-for="project in store.projectList" :key="project.id" class="entry" v-show="project.name">
           <div class="entry-head">
-            <p class="entry-main"><strong>{{ project.name }}</strong></p>
+            <p class="entry-main">
+              <strong>{{ project.name }}</strong>
+              <span v-if="project.role">{{ project.role }}</span>
+            </p>
             <span class="entry-date">{{ project.startDate }} - {{ project.endDate || '至今' }}</span>
           </div>
-          <p class="entry-subline">{{ subLine([project.role]) }}</p>
           <p v-if="project.link" class="entry-link-row">
-            <a class="entry-link" :href="project.link" target="_blank" rel="noopener noreferrer">{{ project.link }}</a>
+            <a class="entry-link" :href="project.link" target="_blank" rel="noopener noreferrer">项目链接：{{ project.link }}</a>
           </p>
-          <div v-if="project.introduction" class="entry-rich" v-html="project.introduction"></div>
-          <div v-if="project.mainWork" class="entry-rich" v-html="project.mainWork"></div>
+          <div v-if="project.introduction">
+            <p v-if="store.showProjectSubtitles" class="project-block-title">项目介绍</p>
+            <div class="entry-rich" v-html="project.introduction"></div>
+          </div>
+          <div v-if="project.mainWork">
+            <p v-if="store.showProjectSubtitles" class="project-block-title">主要工作</p>
+            <div class="entry-rich" v-html="project.mainWork"></div>
+          </div>
         </article>
       </section>
 
@@ -185,6 +195,27 @@ function subLine(values: Array<string | undefined>): string {
 </template>
 
 <style scoped>
+/* 全局动态布局引擎支持 */
+:deep(.resume-header), :deep(.header) { 
+  display: flex !important;
+  flex-direction: var(--tpl-header-dir, row) !important;
+  justify-content: var(--tpl-header-justify, space-between) !important; 
+  align-items: var(--tpl-header-align-items, flex-start) !important;
+}
+:deep(.header-main), :deep(.name-row) { 
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: var(--tpl-header-align, flex-start) !important; 
+  text-align: var(--tpl-text-align, left) !important;
+}
+:deep(.contact-line), :deep(.meta-bar), :deep(.contact-info) { justify-content: var(--tpl-header-align, flex-start) !important; }
+:deep(.meta-icon-svg), :deep(.meta-icon-wrap) { display: var(--tpl-meta-icon-display, inline-block) !important; }
+:deep(.avatar-wrap), :deep(.header-avatar) { 
+  border-radius: var(--tpl-avatar-radius, 4px) !important; 
+  display: var(--tpl-avatar-display, block) !important; 
+  margin: var(--tpl-avatar-margin, 0) !important;
+}
+:deep(.meta-label) { display: var(--tpl-meta-label-display, none) !important; margin-right: 2px; }
 .resume-template-blue-sidebar {
   box-sizing: border-box;
   width: 100%;
@@ -192,12 +223,13 @@ function subLine(values: Array<string | undefined>): string {
   display: flex;
   background: #eef4ff;
   color: #172033;
+  font-family: var(--tpl-font, 'Noto Sans SC', sans-serif);
 }
 
 .sidebar {
   width: 218px;
   flex: 0 0 218px;
-  background: linear-gradient(180deg, #1f73d9 0%, #1a5fb8 100%);
+  background: linear-gradient(180deg, var(--tpl-primary, #1f73d9) 0%, var(--tpl-primary-dark, #1a5fb8) 100%);
   color: #f8fbff;
   padding: 26px 18px;
 }
@@ -211,7 +243,7 @@ function subLine(values: Array<string | undefined>): string {
 .avatar-wrap {
   width: 96px;
   height: 118px;
-  margin: 0 auto 10px;
+  margin: 0 auto 10px !important;
   border: 2px solid rgba(255, 255, 255, 0.35);
   border-radius: 8px;
   overflow: hidden;
@@ -289,7 +321,7 @@ function subLine(values: Array<string | undefined>): string {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  padding: 20px 18px 16px;
+  padding: var(--tpl-page-padding-y, 20px) var(--tpl-page-padding-x, 18px) 16px;
   background:
     radial-gradient(circle at 95% 18%, rgba(47, 111, 219, 0.06) 0, rgba(47, 111, 219, 0.06) 180px, transparent 181px),
     repeating-radial-gradient(circle at 95% 18%, rgba(47, 111, 219, 0.05) 0 1px, transparent 1px 13px),
@@ -297,7 +329,7 @@ function subLine(values: Array<string | undefined>): string {
 }
 
 .resume-section {
-  margin-bottom: 10px;
+  margin-bottom: var(--tpl-section-gap, 10px);
 }
 
 .resume-section:last-of-type {
@@ -305,15 +337,15 @@ function subLine(values: Array<string | undefined>): string {
 }
 
 .section-title {
-  margin: 2px 0 8px;
+  margin: var(--tpl-title-gap-top, 2px) 0 var(--tpl-title-gap-bottom, 8px);
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 16px;
-  color: #1f73d9;
+  color: var(--tpl-primary, #1f73d9);
   font-weight: 700;
   line-height: 1.2;
-  border-bottom: 1px solid #bcd5f8;
+  border-bottom: 1px solid var(--tpl-primary-light, #bcd5f8);
   padding-bottom: 6px;
 }
 
@@ -321,7 +353,7 @@ function subLine(values: Array<string | undefined>): string {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: #1f73d9;
+  background: var(--tpl-primary, #1f73d9);
   position: relative;
   flex-shrink: 0;
 }
@@ -380,7 +412,7 @@ function subLine(values: Array<string | undefined>): string {
 }
 
 .entry-link {
-  color: #1f73d9;
+  color: var(--tpl-primary, #1f73d9);
   text-decoration: none;
   font-size: 13px;
 }
@@ -389,11 +421,19 @@ function subLine(values: Array<string | undefined>): string {
   text-decoration: underline;
 }
 
+.project-block-title {
+  margin-top: 6px;
+  margin-bottom: 1px;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 500;
+}
+
 .entry-rich {
   margin-top: 3px;
   color: #162338;
-  font-size: 14px;
-  line-height: 1.8;
+  font-size: var(--tpl-font-size, 14px);
+  line-height: var(--tpl-line-height, 1.8);
 }
 
 .empty {

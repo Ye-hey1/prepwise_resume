@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import MarkdownIt from 'markdown-it'
 import type { AwardEntry, ProjectEntry, WorkEntry } from '@/stores/resume'
 import { useResumeStore } from '@/stores/resume'
@@ -8,8 +8,11 @@ import {
   optimizeModule,
   parseAiResponse,
   getModuleLabel,
+  buildModuleText,
   type ModuleData,
+  type OptimizeVersion,
 } from '@/services/aiService'
+import DiffView from '@/components/common/DiffView.vue'
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -20,10 +23,28 @@ const resumeStore = useResumeStore()
 const aiConfig = useAiConfigStore()
 
 const selectedModule = ref('')
+const selectedVersion = ref<OptimizeVersion>('A')
 const isLoading = ref(false)
+
+// 局部模型选择（多渠道适配）
+const localOverrideVisible = computed({
+  get: () => {
+    const over = aiConfig.modelOverrides.resumeOptimize
+    return over ? `${over.channelId}|${over.modelId}` : ''
+  },
+  set: (val: string) => {
+    if (!val) {
+      aiConfig.updateModelOverride('resumeOptimize', '', '')
+    } else {
+      const [channelId, modelId] = val.split('|')
+      aiConfig.updateModelOverride('resumeOptimize', channelId ?? '', modelId ?? '')
+    }
+  }
+})
 const streamText = ref('')
 const errorMsg = ref('')
 const isDone = ref(false)
+const showDiffView = ref(false)
 const appliedModules = ref<Set<string>>(new Set())
 type ApplyUndoSnapshot = {
   previousContent: string
@@ -51,9 +72,52 @@ const markdown = new MarkdownIt({
   typographer: false,
 })
 
-const parsed = computed(() => parseAiResponse(streamText.value))
+// Markdown 渲染防抖：AI 流式响应时减少渲染频率，提升性能
+const debouncedStreamText = ref('')
+let renderDebounceTimer: ReturnType<typeof setTimeout> | null = null
+watch(streamText, (val) => {
+  if (isLoading.value && val) {
+    if (renderDebounceTimer) clearTimeout(renderDebounceTimer)
+    renderDebounceTimer = setTimeout(() => {
+      debouncedStreamText.value = val
+      renderDebounceTimer = null
+    }, 50)
+  } else {
+    debouncedStreamText.value = val
+  }
+})
+
+const parsed = computed(() => parseAiResponse(debouncedStreamText.value))
 const renderedSuggestions = computed(() => markdown.render(parsed.value.suggestions || ''))
+
+const VERSION_OPTIONS: Array<{ key: OptimizeVersion; label: string }> = [
+  { key: 'A', label: '标准专业版' },
+  { key: 'B', label: '数据驱动版' },
+  { key: 'C', label: '专家架构版' },
+]
+
+const currentVersionLabel = computed(
+  () => VERSION_OPTIONS.find(option => option.key === selectedVersion.value)?.label ?? '标准专业版',
+)
+
+function getAppliedKey(moduleKey: string, version: OptimizeVersion): string {
+  return `${moduleKey}::${version}`
+}
+
+const currentAppliedKey = computed(() => {
+  if (!selectedModule.value) return ''
+  return getAppliedKey(selectedModule.value, selectedVersion.value)
+})
+
 const resolvedOptimizedContent = computed(() => {
+  if (parsed.value.versions.length > 0) {
+    const matchedVersion = parsed.value.versions.find(version => version.label.includes(currentVersionLabel.value))
+    if (matchedVersion?.content?.trim()) {
+      return matchedVersion.content.trim()
+    }
+    const fallbackVersion = parsed.value.versions[0]?.content?.trim()
+    if (fallbackVersion) return fallbackVersion
+  }
   const optimized = parsed.value.optimizedContent.trim()
   if (optimized) return optimized
   if (selectedModule.value === 'selfIntro') {
@@ -61,13 +125,57 @@ const resolvedOptimizedContent = computed(() => {
   }
   return ''
 })
+
 const renderedOptimizedContent = computed(() => markdown.render(resolvedOptimizedContent.value || ''))
+
+/** 当前模块的原始文本（用于 Diff 对比） */
+const originalModuleText = computed(() => {
+  if (!selectedModule.value) return ''
+  const moduleData: ModuleData = {
+    basicInfo: resumeStore.basicInfo,
+    educationList: [...resumeStore.educationList],
+    skills: resumeStore.skills,
+    workList: [...resumeStore.workList],
+    projectList: [...resumeStore.projectList],
+    awardList: [...resumeStore.awardList],
+    selfIntro: resumeStore.selfIntro,
+  }
+  return buildModuleText(selectedModule.value, moduleData)
+})
+
 const applySupportedModules = new Set(['skills', 'selfIntro', 'workExperience', 'projectExperience', 'awards'])
 const canApplySelectedModule = computed(() => applySupportedModules.has(selectedModule.value))
 const canUndoSelectedModule = computed(() => {
-  const key = selectedModule.value
+  const key = currentAppliedKey.value
   if (!key) return false
   return (applyHistory.value[key]?.length ?? 0) > 0
+})
+
+function resetResultState() {
+  streamText.value = ''
+  errorMsg.value = ''
+  isDone.value = false
+}
+
+watch([selectedModule, selectedVersion], () => {
+  if (isLoading.value) {
+    handleStop()
+  }
+  resetResultState()
+})
+
+watch(visibleModules, modules => {
+  if (selectedModule.value && !modules.some(module => module.key === selectedModule.value)) {
+    selectedModule.value = ''
+  }
+})
+
+onBeforeUnmount(() => {
+  if (renderDebounceTimer) {
+    clearTimeout(renderDebounceTimer)
+    renderDebounceTimer = null
+  }
+  abortController?.abort()
 })
 
 const PROJECT_TECH_KEYWORDS = [
@@ -863,22 +971,19 @@ function getModuleData(): ModuleData {
 }
 
 async function handleOptimize() {
-  if (!selectedModule.value) return
+  if (!selectedModule.value || !selectedVersion.value) return
 
   isLoading.value = true
-  streamText.value = ''
-  errorMsg.value = ''
-  isDone.value = false
+  resetResultState()
 
   abortController = new AbortController()
 
   await optimizeModule(
     {
-      apiUrl: aiConfig.apiUrl,
-      apiToken: aiConfig.apiToken,
-      modelName: aiConfig.modelName,
+      ...aiConfig.getConfigForFeature('resumeOptimize'),
     },
     selectedModule.value,
+    selectedVersion.value,
     getModuleData(),
     {
       onChunk(text) {
@@ -888,33 +993,66 @@ async function handleOptimize() {
         streamText.value = fullText
         isLoading.value = false
         isDone.value = true
+        abortController = null
       },
       onError(err) {
         errorMsg.value = err
         isLoading.value = false
+        abortController = null
       },
     },
     abortController.signal,
   )
 }
 
-function handleStop() {
-  abortController?.abort()
-  abortController = null
-  isLoading.value = false
-  if (streamText.value) {
-    isDone.value = true
+function getCurrentResultContent(): string {
+  return resolvedOptimizedContent.value
+}
+
+function getCurrentModuleVersionKey(): string {
+  if (!selectedModule.value) return ''
+  return getAppliedKey(selectedModule.value, selectedVersion.value)
+}
+
+function clearAppliedStateForModule(moduleKey: string) {
+  for (const key of appliedModules.value) {
+    if (key.startsWith(`${moduleKey}::`)) {
+      appliedModules.value.delete(key)
+    }
   }
 }
 
-function handleApply() {
-  if (!resolvedOptimizedContent.value || !selectedModule.value) return
+function markCurrentApplied() {
+  const key = getCurrentModuleVersionKey()
+  if (!key) return
+  clearAppliedStateForModule(selectedModule.value)
+  appliedModules.value.add(key)
+}
 
-  const cleaned = removeLeadingModuleTitle(resolvedOptimizedContent.value, selectedModule.value)
+function unmarkCurrentApplied() {
+  const key = getCurrentModuleVersionKey()
+  if (!key) return
+  appliedModules.value.delete(key)
+}
+
+function isCurrentApplied(): boolean {
+  const key = getCurrentModuleVersionKey()
+  return key ? appliedModules.value.has(key) : false
+}
+
+const currentApplied = computed(() => isCurrentApplied())
+
+function handleApply() {
+  const rawContent = getCurrentResultContent()
+
+  if (!rawContent || !selectedModule.value) return
+
+  const cleaned = removeLeadingModuleTitle(rawContent, selectedModule.value)
   const normalized = normalizeMarkdownListContent(cleaned)
   const sanitized = sanitizeMarkdownForRender(normalized)
   const content = markdown.render(sanitized)
   const key = selectedModule.value
+  const appliedKey = getCurrentModuleVersionKey()
   let applied = false
   let undoSnapshot: ApplyUndoSnapshot | null = null
 
@@ -1044,21 +1182,21 @@ function handleApply() {
     return
   }
 
-  if (undoSnapshot) {
-    pushApplyHistory(key, undoSnapshot)
+  if (undoSnapshot && appliedKey) {
+    pushApplyHistory(appliedKey, undoSnapshot)
   }
-  appliedModules.value.add(key)
+  markCurrentApplied()
   errorMsg.value = ''
   resumeStore.saveToStorage()
 }
 
 function handleUndoApply() {
-  const key = selectedModule.value
+  const key = getCurrentModuleVersionKey()
   if (!key) return
   const snapshot = popApplyHistory(key)
-  if (!snapshot) return
+  if (!snapshot || !selectedModule.value) return
 
-  switch (key) {
+  switch (selectedModule.value) {
     case 'skills':
       resumeStore.skills = snapshot.previousContent
       break
@@ -1120,7 +1258,7 @@ function handleUndoApply() {
       break
   }
 
-  appliedModules.value.delete(key)
+  unmarkCurrentApplied()
   errorMsg.value = ''
   resumeStore.saveToStorage()
 }
@@ -1131,10 +1269,17 @@ function handleClose() {
 }
 
 function handleReset() {
-  streamText.value = ''
-  errorMsg.value = ''
-  isDone.value = false
-  appliedModules.value.delete(selectedModule.value)
+  resetResultState()
+  unmarkCurrentApplied()
+}
+
+function handleStop() {
+  abortController?.abort()
+  abortController = null
+  isLoading.value = false
+  if (streamText.value) {
+    isDone.value = true
+  }
 }
 </script>
 
@@ -1155,16 +1300,24 @@ function handleReset() {
             <h3 class="panel-title">AI 优化建议</h3>
           </div>
           <div class="panel-header-right">
-            <button
-              class="config-btn"
-              :data-model-tooltip="aiConfig.modelName || '配置模型'"
-              @click="emit('open-config')"
-            >
+            <div class="local-model-selector" v-if="aiConfig.isConfigured">
+              <select
+                v-model="localOverrideVisible"
+                class="local-model-select"
+              >
+                <option value="">跟随默认</option>
+                <optgroup v-for="ch in aiConfig.channels" :key="ch.id" :label="ch.name">
+                  <option v-for="model in ch.fetchedModels" :key="model" :value="`${ch.id}|${model}`">
+                    {{ model }}
+                  </option>
+                </optgroup>
+              </select>
+            </div>
+            <button class="config-btn" title="全局 API 设置" @click="emit('open-config')">
               <svg class="icon-xs" viewBox="0 0 24 24" aria-hidden="true">
                 <circle cx="12" cy="12" r="3" />
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
               </svg>
-              <span class="config-btn-text">{{ aiConfig.modelName || '配置' }}</span>
             </button>
             <button class="close-btn" @click="handleClose" aria-label="关闭">
               <svg class="icon-sm" viewBox="0 0 24 24" aria-hidden="true">
@@ -1185,11 +1338,18 @@ function handleReset() {
             </option>
           </select>
 
+          <label class="selector-label selector-label-secondary">选择优化版本</label>
+          <select v-model="selectedVersion" class="module-select">
+            <option v-for="version in VERSION_OPTIONS" :key="version.key" :value="version.key">
+              {{ version.label }}
+            </option>
+          </select>
+
           <div class="action-row">
             <button
               v-if="!isLoading"
               class="btn-optimize"
-              :disabled="!selectedModule || !aiConfig.isConfigured"
+              :disabled="!selectedModule || !selectedVersion"
               @click="handleOptimize"
             >
               <svg class="icon-xs" viewBox="0 0 24 24" aria-hidden="true">
@@ -1218,14 +1378,12 @@ function handleReset() {
             </button>
           </div>
 
-          <p v-if="!aiConfig.isConfigured" class="config-tip">
-            <svg class="icon-xs config-tip-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 3l10 18H2L12 3z" />
-              <path d="M12 9v5" />
-              <path d="M12 18h.01" />
+          <p v-if="aiConfig.activeConfig.isFreeTier" class="free-tier-tip">
+            <svg class="icon-xs" viewBox="0 0 24 24" style="fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round" aria-hidden="true">
+              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
             </svg>
-            <span>请先点击右上角</span>
-            <button class="inline-link" @click="emit('open-config')">配置 AI 服务</button>
+            <span>当前使用免费模型</span>
+            <button class="inline-link" @click="emit('open-config')">切换模型</button>
           </p>
         </div>
 
@@ -1260,10 +1418,9 @@ function handleReset() {
               </svg>
               <span>优化建议</span>
             </h4>
-            <div class="result-content markdown-content" v-html="renderedSuggestions"></div>
+            <div class="result-content markdown-content" v-safe-html:md="renderedSuggestions"></div>
           </div>
 
-          <!-- Optimized content -->
           <div v-if="resolvedOptimizedContent" class="result-card content-card">
             <div class="result-card-header">
               <h4 class="result-card-title">
@@ -1273,10 +1430,23 @@ function handleReset() {
                   <path d="M5 7v14h14v-5" />
                 </svg>
                 <span>优化后内容</span>
+                <span class="applied-tag">{{ currentVersionLabel }}</span>
               </h4>
               <div class="result-card-actions">
                 <button
-                  v-if="isDone && canApplySelectedModule && !appliedModules.has(selectedModule)"
+                  v-if="isDone && canApplySelectedModule"
+                  class="btn-diff"
+                  :class="{ active: showDiffView }"
+                  @click="showDiffView = !showDiffView"
+                  title="对比原文与优化结果"
+                >
+                  <svg class="icon-xs" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 3v18M3 12h18" />
+                  </svg>
+                  <span>{{ showDiffView ? '关闭对比' : '对比原文' }}</span>
+                </button>
+                <button
+                  v-if="isDone && canApplySelectedModule && !currentApplied"
                   class="btn-apply"
                   @click="handleApply"
                 >
@@ -1286,7 +1456,7 @@ function handleReset() {
                   <span>应用此内容</span>
                 </button>
                 <button
-                  v-if="isDone && canApplySelectedModule && appliedModules.has(selectedModule) && canUndoSelectedModule"
+                  v-if="isDone && canApplySelectedModule && currentApplied && canUndoSelectedModule"
                   class="btn-undo"
                   @click="handleUndoApply"
                 >
@@ -1296,11 +1466,18 @@ function handleReset() {
                   </svg>
                   <span>撤回应用</span>
                 </button>
-                <span v-if="appliedModules.has(selectedModule)" class="applied-tag">已应用</span>
+                <span v-if="currentApplied" class="applied-tag">已应用</span>
                 <span v-if="isDone && !canApplySelectedModule" class="applied-tag">仅查看结果</span>
               </div>
             </div>
-            <div class="result-content markdown-content" v-html="renderedOptimizedContent"></div>
+            <div v-if="showDiffView && isDone" class="diff-view-wrapper">
+              <DiffView
+                :original="originalModuleText"
+                :suggested="resolvedOptimizedContent"
+                label="优化前后对比"
+              />
+            </div>
+            <div v-else class="result-content markdown-content" v-safe-html:md="renderedOptimizedContent"></div>
           </div>
 
           <!-- Stream cursor -->
@@ -1312,14 +1489,41 @@ function handleReset() {
 </template>
 
 <style scoped>
+.local-model-selector {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-hover);
+  padding: 4px 8px 4px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+.local-model-select {
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  width: 130px;
+  cursor: pointer;
+}
+.local-model-select:focus {
+  outline: none;
+}
+
 .panel-overlay {
   position: fixed;
   inset: 0;
-  background: transparent;
+  background: rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   z-index: 900;
-  display: block;
-  pointer-events: none;
-  animation: fadeIn 0.18s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  pointer-events: auto;
+  animation: fadeIn 0.2s ease;
 }
 
 @keyframes fadeIn {
@@ -1328,42 +1532,44 @@ function handleReset() {
 }
 
 .optimize-panel {
-  --preview-panel-width: 812px;
-  position: fixed;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: calc(100vw - var(--preview-panel-width));
-  min-width: 560px;
-  max-width: 100vw;
-  height: 100vh;
-  background: #faf7f4;
-  border-right: 1px solid #e9ded0;
+  position: relative;
+  width: 720px;
+  max-width: min(720px, 100%);
+  max-height: 85vh;
+  background: var(--bg-card);
+  border-radius: 16px;
+  border: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-gutter: stable;
+  overflow: hidden;
   pointer-events: auto;
-  animation: slideIn 0.25s ease;
-  box-shadow: -8px 0 30px rgba(30, 20, 14, 0.1);
+  animation: modalScaleIn 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow:
+    0 24px 60px rgba(30, 20, 14, 0.18),
+    0 0 0 1px rgba(0, 0, 0, 0.04);
 }
 
-.optimize-panel::-webkit-scrollbar {
-  width: 10px;
+.optimize-panel::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--primary-500), var(--primary-400), var(--accent-green, #22a06b));
+  border-radius: 16px 16px 0 0;
+  z-index: 1;
 }
 
-.optimize-panel::-webkit-scrollbar-thumb {
-  background: #cdbcae;
-}
-
-.optimize-panel::-webkit-scrollbar-thumb:hover {
-  background: #b7a392;
-}
-
-@keyframes slideIn {
-  from { transform: translateX(-100%); }
-  to { transform: translateX(0); }
+@keyframes modalScaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 /* ---- Header ---- */
@@ -1371,10 +1577,11 @@ function handleReset() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
-  border-bottom: 1px solid #e9ded0;
-  background: #fff;
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-card);
   flex-shrink: 0;
+  margin-top: 3px;
 }
 
 .panel-header-left {
@@ -1395,7 +1602,7 @@ function handleReset() {
   width: 18px;
   height: 18px;
   fill: none;
-  stroke: #d97745;
+  stroke: var(--primary-500);
   stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -1423,9 +1630,9 @@ function handleReset() {
 }
 
 .panel-title {
-  font-size: 15px;
-  font-weight: 700;
-  color: #2d2521;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text-primary);
 }
 
 .panel-header-right {
@@ -1439,9 +1646,9 @@ function handleReset() {
   height: 30px;
   padding: 0 10px;
   border-radius: 7px;
-  border: 1px solid #ddd2c6;
-  background: #fff;
-  color: #5c4f44;
+  border: 1px solid var(--gray-300);
+  background: var(--bg-card);
+  color: var(--text-secondary);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
@@ -1476,7 +1683,7 @@ function handleReset() {
   top: calc(100% + 3px);
   transform: translate(-50%, -6px);
   border: 5px solid transparent;
-  border-bottom-color: #2d2521;
+  border-bottom-color: var(--text-primary);
   z-index: 60;
 }
 
@@ -1490,8 +1697,8 @@ function handleReset() {
   max-width: min(680px, 88vw);
   padding: 6px 8px;
   border-radius: 6px;
-  background: #2d2521;
-  color: #fff;
+  background: var(--text-primary);
+  color: var(--bg-card);
   font-size: 12px;
   font-weight: 500;
   line-height: 1.35;
@@ -1510,8 +1717,8 @@ function handleReset() {
 }
 
 .config-btn:hover {
-  border-color: #d97745;
-  color: #d97745;
+  border-color: var(--primary-500);
+  color: var(--primary-500);
 }
 
 .close-btn {
@@ -1519,8 +1726,8 @@ function handleReset() {
   height: 30px;
   border: none;
   border-radius: 8px;
-  background: #f5f0ea;
-  color: #8a7461;
+  background: var(--bg-hover);
+  color: var(--gray-500);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1528,22 +1735,22 @@ function handleReset() {
 }
 
 .close-btn:hover {
-  background: #efe7dc;
-  color: #d97745;
+  background: var(--bg-sidebar);
+  color: var(--primary-500);
 }
 
 /* ---- Selector ---- */
 .selector-section {
   padding: 16px 20px;
-  border-bottom: 1px solid #e9ded0;
-  background: #fff;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-card);
   flex-shrink: 0;
 }
 
 .selector-label {
   font-size: 12px;
   font-weight: 600;
-  color: #5c4f44;
+  color: var(--text-secondary);
   margin-bottom: 6px;
   display: block;
 }
@@ -1551,19 +1758,19 @@ function handleReset() {
 .module-select {
   width: 100%;
   height: 40px;
-  border: 1px solid #ddd2c6;
+  border: 1px solid var(--gray-300);
   border-radius: 8px;
   padding: 0 12px;
   font-size: 13px;
-  color: #2d2521;
-  background: #faf7f4;
+  color: var(--text-primary);
+  background: var(--gray-50);
   appearance: auto;
 }
 
 .module-select:focus {
   outline: none;
-  border-color: #d97745;
-  box-shadow: 0 0 0 3px rgba(217, 119, 69, 0.12);
+  border-color: var(--primary-500);
+  box-shadow: 0 0 0 3px rgba(43, 123, 184, 0.12);
 }
 
 .action-row {
@@ -1577,8 +1784,8 @@ function handleReset() {
   height: 38px;
   border: none;
   border-radius: 8px;
-  background: #d97745;
-  color: #fff;
+  background: var(--primary-500);
+  color: var(--bg-card);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -1590,7 +1797,7 @@ function handleReset() {
 }
 
 .btn-optimize:hover:not(:disabled) {
-  background: #c96a3b;
+  background: var(--primary-600);
 }
 
 .btn-optimize:disabled {
@@ -1603,8 +1810,8 @@ function handleReset() {
   height: 38px;
   border: none;
   border-radius: 8px;
-  background: #e74c3c;
-  color: #fff;
+  background: var(--accent-red);
+  color: var(--bg-card);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -1615,16 +1822,16 @@ function handleReset() {
 }
 
 .btn-stop:hover {
-  background: #c0392b;
+  background: color-mix(in srgb, var(--accent-red) 80%, black);
 }
 
 .btn-reset {
   height: 38px;
   padding: 0 14px;
-  border: 1px solid #ddd2c6;
+  border: 1px solid var(--gray-300);
   border-radius: 8px;
-  background: #fff;
-  color: #5c4f44;
+  background: var(--bg-card);
+  color: var(--text-secondary);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -1634,14 +1841,14 @@ function handleReset() {
 }
 
 .btn-reset:hover {
-  border-color: #d97745;
-  color: #d97745;
+  border-color: var(--primary-500);
+  color: var(--primary-500);
 }
 
 .config-tip {
   margin-top: 8px;
   font-size: 12px;
-  color: #c96a3b;
+  color: var(--primary-600);
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -1649,13 +1856,13 @@ function handleReset() {
 }
 
 .config-tip-icon {
-  color: #c96a3b;
+  color: var(--primary-600);
 }
 
 .inline-link {
   border: none;
   background: none;
-  color: #d97745;
+  color: var(--primary-500);
   font-weight: 600;
   font-size: 12px;
   cursor: pointer;
@@ -1665,13 +1872,14 @@ function handleReset() {
 
 /* ---- Results ---- */
 .results-area {
-  flex: 1 0 auto;
+  flex: 1 1 auto;
   min-height: auto;
-  overflow: visible;
-  padding: 16px 20px;
+  overflow-y: auto;
+  padding: 16px 22px;
   display: flex;
   flex-direction: column;
   gap: 14px;
+  overflow-y: auto;
 }
 
 .error-card {
@@ -1680,18 +1888,18 @@ function handleReset() {
   gap: 8px;
   padding: 14px;
   border-radius: 10px;
-  background: #fef2f0;
-  border: 1px solid #f5d0cc;
+  background: color-mix(in srgb, var(--accent-red) 8%, white);
+  border: 1px solid color-mix(in srgb, var(--accent-red) 25%, white);
 }
 
 .error-icon {
-  color: #c0392b;
+  color: color-mix(in srgb, var(--accent-red) 80%, black);
   flex-shrink: 0;
 }
 
 .error-text {
   font-size: 13px;
-  color: #c0392b;
+  color: color-mix(in srgb, var(--accent-red) 80%, black);
   line-height: 1.5;
   word-break: break-all;
 }
@@ -1713,7 +1921,7 @@ function handleReset() {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #d97745;
+  background: var(--primary-500);
   animation: bounce 1.2s infinite ease-in-out;
 }
 
@@ -1727,15 +1935,16 @@ function handleReset() {
 
 .loading-text {
   font-size: 13px;
-  color: #8a7461;
+  color: var(--gray-500);
 }
 
 /* ---- Result Cards ---- */
 .result-card {
-  border-radius: 10px;
-  border: 1px solid #e9ded0;
-  background: #fff;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
   overflow: hidden;
+  box-shadow: 0 2px 8px rgba(30, 42, 60, 0.06);
 }
 
 .result-card-header {
@@ -1761,13 +1970,13 @@ function handleReset() {
   gap: 6px;
   font-size: 13px;
   font-weight: 700;
-  color: #2d2521;
+  color: var(--text-primary);
 }
 
 .result-content {
   padding: 10px 14px 14px;
   font-size: 13px;
-  color: #3d3530;
+  color: var(--text-primary);
   line-height: 1.75;
   word-break: break-word;
 }
@@ -1777,7 +1986,7 @@ function handleReset() {
 .markdown-content :deep(h3),
 .markdown-content :deep(h4) {
   margin: 0 0 8px;
-  color: #2d2521;
+  color: var(--text-primary);
   line-height: 1.45;
 }
 
@@ -1808,20 +2017,20 @@ function handleReset() {
 }
 
 .markdown-content :deep(strong) {
-  color: #2d2521;
+  color: var(--text-primary);
   font-weight: 700;
 }
 
 .markdown-content :deep(code) {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
-  background: #f5efe8;
+  background: var(--bg-hover);
   border-radius: 4px;
   padding: 0 4px;
 }
 
 .markdown-content :deep(a) {
-  color: #c96a3b;
+  color: var(--primary-600);
   text-decoration: underline;
   word-break: break-all;
 }
@@ -1829,10 +2038,10 @@ function handleReset() {
 .btn-apply {
   height: 30px;
   padding: 0 12px;
-  border: 1px solid #d97745;
+  border: 1px solid var(--primary-500);
   border-radius: 7px;
-  background: #d97745;
-  color: #fff;
+  background: var(--primary-500);
+  color: var(--bg-card);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -1843,17 +2052,49 @@ function handleReset() {
 }
 
 .btn-apply:hover {
-  background: #c96a3b;
-  border-color: #c96a3b;
+  background: var(--primary-600);
+  border-color: var(--primary-600);
+}
+
+.btn-diff {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.btn-diff:hover {
+  border-color: var(--accent-info);
+  color: var(--accent-info);
+}
+
+.btn-diff.active {
+  border-color: var(--accent-info);
+  background: color-mix(in srgb, var(--accent-info) 8%, transparent);
+  color: var(--accent-info);
+}
+
+.diff-view-wrapper {
+  padding: 12px 0;
 }
 
 .btn-undo {
   height: 30px;
   padding: 0 12px;
-  border: 1px solid #ddd2c6;
+  border: 1px solid var(--gray-300);
   border-radius: 7px;
-  background: #fff;
-  color: #5c4f44;
+  background: var(--bg-card);
+  color: var(--text-secondary);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -1864,23 +2105,63 @@ function handleReset() {
 }
 
 .btn-undo:hover {
-  border-color: #d97745;
-  color: #d97745;
+  border-color: var(--primary-500);
+  color: var(--primary-500);
 }
 
 .applied-tag {
   font-size: 12px;
   font-weight: 600;
-  color: #d97745;
+  color: var(--primary-500);
   padding: 4px 10px;
   border-radius: 6px;
-  background: #fff3eb;
+  background: var(--gray-50);
+}
+
+
+/* ---- Free Tier Tip ---- */
+.free-tier-tip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.free-tier-tip svg {
+  color: var(--accent-green, #22a06b);
+  flex-shrink: 0;
+}
+
+.free-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent-green, #22a06b) 12%, transparent);
+  color: var(--accent-green, #22a06b);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
 }
 
 .stream-cursor {
-  color: #d97745;
+  color: var(--primary-500);
   font-weight: 700;
   animation: blink 0.7s steps(2, start) infinite;
+}
+
+.free-tier-tip .inline-link {
+  color: var(--primary-500);
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
 }
 
 @keyframes blink {
@@ -1889,18 +2170,18 @@ function handleReset() {
 
 @media (max-width: 720px) {
   .optimize-panel {
-    width: 100vw;
-    max-width: 100vw;
-    min-width: 0;
-    border-right: none;
-    border-left: 1px solid #e9ded0;
+    width: 100%;
+    max-width: 100%;
+    max-height: 100vh;
+    border-radius: 0;
   }
-}
 
-@media (max-width: 1480px) and (min-width: 721px) {
-  .optimize-panel {
-    --preview-panel-width: 640px;
-    min-width: 420px;
+  .panel-overlay {
+    padding: 0;
+  }
+
+  .optimize-panel::before {
+    border-radius: 0;
   }
 }
 </style>

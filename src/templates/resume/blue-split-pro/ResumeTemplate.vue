@@ -2,8 +2,10 @@
 import { computed } from 'vue'
 import { toHref } from '../../shared/metaIcons'
 import { useResumeTemplateData } from '../../shared/useResumeTemplateData'
+import { useTemplateCustomization } from '../../shared/useTemplateCustomization'
 
 const { store, hasAnyContent, moduleOrderStyle } = useResumeTemplateData()
+const { cssVars } = useTemplateCustomization()
 
 const contactItems = computed(() => {
   const items = [
@@ -63,7 +65,7 @@ function subLine(values: Array<string | undefined>): string {
 </script>
 
 <template>
-  <div class="resume-template-blue-split-pro">
+  <div class="resume-template-blue-split-pro" :style="cssVars">
     <aside class="left-panel">
       <div class="identity">
         <div class="avatar-wrap">
@@ -92,7 +94,7 @@ function subLine(values: Array<string | undefined>): string {
       <section v-if="linkItems.length" class="side-block">
         <h3>个人链接</h3>
         <a v-for="item in linkItems" :key="item.key" :href="item.href" target="_blank" rel="noopener noreferrer">
-          <span>{{ item.label }}</span>{{ item.text }}
+          <span>{{ item.label }}</span><span class="meta-label" v-if="item.label">{{ item.label }}: </span>{{ item.text }}
         </a>
       </section>
     </aside>
@@ -148,19 +150,21 @@ function subLine(values: Array<string | undefined>): string {
         <h2 class="section-title">项目经历</h2>
         <article v-for="project in store.projectList" :key="project.id" class="entry" v-show="project.name">
           <div class="entry-head">
-            <p class="entry-main"><strong>{{ project.name }}</strong></p>
+            <p class="entry-main">
+              <strong>{{ project.name }}</strong>
+              <span v-if="project.role">{{ project.role }}</span>
+            </p>
             <span class="entry-date">{{ project.startDate }} - {{ project.endDate || '至今' }}</span>
           </div>
-          <p class="entry-subline">{{ subLine([project.role]) }}</p>
           <p v-if="project.link" class="entry-link-row">
-            <a class="entry-link" :href="project.link" target="_blank" rel="noopener noreferrer">{{ project.link }}</a>
+            <a class="entry-link" :href="project.link" target="_blank" rel="noopener noreferrer">项目链接：{{ project.link }}</a>
           </p>
           <div v-if="project.introduction">
-            <p class="block-title">项目介绍</p>
+            <p v-if="store.showProjectSubtitles" class="project-block-title">项目介绍</p>
             <div class="entry-rich" v-html="project.introduction"></div>
           </div>
           <div v-if="project.mainWork">
-            <p class="block-title">主要工作</p>
+            <p v-if="store.showProjectSubtitles" class="project-block-title">主要工作</p>
             <div class="entry-rich" v-html="project.mainWork"></div>
           </div>
         </article>
@@ -189,6 +193,27 @@ function subLine(values: Array<string | undefined>): string {
 </template>
 
 <style scoped>
+/* 全局动态布局引擎支持 */
+:deep(.resume-header), :deep(.header) { 
+  display: flex !important;
+  flex-direction: var(--tpl-header-dir, row) !important;
+  justify-content: var(--tpl-header-justify, space-between) !important; 
+  align-items: var(--tpl-header-align-items, flex-start) !important;
+}
+:deep(.header-main), :deep(.name-row) { 
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: var(--tpl-header-align, flex-start) !important; 
+  text-align: var(--tpl-text-align, left) !important;
+}
+:deep(.contact-line), :deep(.meta-bar), :deep(.contact-info) { justify-content: var(--tpl-header-align, flex-start) !important; }
+:deep(.meta-icon-svg), :deep(.meta-icon-wrap) { display: var(--tpl-meta-icon-display, inline-block) !important; }
+:deep(.avatar-wrap), :deep(.header-avatar) { 
+  border-radius: var(--tpl-avatar-radius, 4px) !important; 
+  display: var(--tpl-avatar-display, block) !important; 
+  margin: var(--tpl-avatar-margin, 0) !important;
+}
+:deep(.meta-label) { display: var(--tpl-meta-label-display, none) !important; margin-right: 2px; }
 .resume-template-blue-split-pro {
   box-sizing: border-box;
   width: 100%;
@@ -197,14 +222,15 @@ function subLine(values: Array<string | undefined>): string {
   grid-template-columns: 228px 1fr;
   background: #ffffff;
   color: #0f172a;
+  font-family: var(--tpl-font, 'Noto Sans SC', sans-serif);
 }
 
 .left-panel {
   background:
     radial-gradient(circle at 100% 0, rgba(255, 255, 255, 0.16) 0 120px, transparent 121px),
-    linear-gradient(180deg, #3f71d8 0%, #345fc0 56%, #2d54ab 100%);
+    linear-gradient(180deg, var(--tpl-primary, #3f71d8) 0%, var(--tpl-primary-dark, #345fc0) 56%, var(--tpl-primary-darker, #2d54ab) 100%);
   color: #e8f1ff;
-  padding: 22px 16px 18px;
+  padding: var(--tpl-page-padding-y, 22px) 16px 18px;
 }
 
 .identity {
@@ -218,15 +244,17 @@ function subLine(values: Array<string | undefined>): string {
   height: 118px;
   border-radius: 8px;
   overflow: hidden;
-  margin: 0 auto 10px;
+  margin: 0 auto 10px !important;
   border: 2px solid rgba(226, 237, 255, 0.42);
   background: rgba(255, 255, 255, 0.15);
 }
 
 .avatar-wrap img {
+  display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center center;
 }
 
 .avatar-placeholder {
@@ -287,7 +315,7 @@ function subLine(values: Array<string | undefined>): string {
 
 .right-panel {
   min-width: 0;
-  padding: 18px 24px 14px;
+  padding: var(--tpl-page-padding-y, 18px) var(--tpl-page-padding-x, 24px) 14px;
   display: flex;
   flex-direction: column;
   background:
@@ -296,7 +324,7 @@ function subLine(values: Array<string | undefined>): string {
 }
 
 .resume-section {
-  margin-bottom: 10px;
+  margin-bottom: var(--tpl-section-gap, 10px);
 }
 
 .resume-section:last-of-type {
@@ -304,10 +332,10 @@ function subLine(values: Array<string | undefined>): string {
 }
 
 .section-title {
-  margin: 0 0 6px;
+  margin: var(--tpl-title-gap-top, 0) 0 var(--tpl-title-gap-bottom, 6px);
   font-size: 16px;
   font-weight: 700;
-  color: #2f63c4;
+  color: var(--tpl-primary, #2f63c4);
   line-height: 1.2;
   display: flex;
   align-items: center;
@@ -348,6 +376,11 @@ function subLine(values: Array<string | undefined>): string {
   font-size: 17px;
 }
 
+.entry-main span {
+  color: #64748b;
+  font-size: 14px;
+}
+
 .entry-date {
   color: #64748b;
   font-size: 14px;
@@ -365,7 +398,7 @@ function subLine(values: Array<string | undefined>): string {
 }
 
 .entry-link {
-  color: #2563eb;
+  color: var(--tpl-primary, #2563eb);
   text-decoration: none;
   font-size: 13px;
 }
@@ -381,11 +414,19 @@ function subLine(values: Array<string | undefined>): string {
   font-weight: 700;
 }
 
+.project-block-title {
+  margin-top: 6px;
+  margin-bottom: 1px;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 500;
+}
+
 .entry-rich {
   margin-top: 2px;
   color: #0f172a;
-  font-size: 13px;
-  line-height: 1.8;
+  font-size: var(--tpl-font-size, 13px);
+  line-height: var(--tpl-line-height, 1.8);
 }
 
 .empty {

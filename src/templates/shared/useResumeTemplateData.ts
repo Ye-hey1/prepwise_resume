@@ -1,4 +1,4 @@
-﻿import { computed } from 'vue'
+import { computed } from 'vue'
 import { useResumeStore } from '@/stores/resume'
 import type { MetaIconKey } from './metaIcons'
 import { toHref } from './metaIcons'
@@ -23,33 +23,33 @@ export function useResumeTemplateData() {
   )
 
   const lineOneMeta = computed(() => [
-    { key: 'phone', icon: 'phone' as MetaIconKey, text: store.basicInfo.phone || '13400009999' },
-    { key: 'mail', icon: 'mail' as MetaIconKey, text: store.basicInfo.email || 'example@qq.com' },
-    { key: 'user', icon: 'user' as MetaIconKey, text: store.basicInfo.age || '26岁' },
-    { key: 'gender', icon: 'gender' as MetaIconKey, text: store.basicInfo.gender || '男' },
-    { key: 'workYears', icon: 'workYears' as MetaIconKey, text: store.basicInfo.workYears || '4年' },
+    { key: 'phone', label: '电话', icon: 'phone' as MetaIconKey, text: store.basicInfo.phone || '13400009999' },
+    { key: 'mail', label: '邮箱', icon: 'mail' as MetaIconKey, text: store.basicInfo.email || 'example@qq.com' },
+    { key: 'user', label: '年龄', icon: 'user' as MetaIconKey, text: store.basicInfo.age || '26岁' },
+    { key: 'gender', label: '性别', icon: 'gender' as MetaIconKey, text: store.basicInfo.gender || '男' },
+    { key: 'workYears', label: '经验', icon: 'workYears' as MetaIconKey, text: store.basicInfo.workYears || '4年' },
   ])
 
   const lineTwoMeta = computed(() => [
-    { key: 'status', icon: 'status' as MetaIconKey, text: store.basicInfo.currentStatus || '离职-随时到岗' },
-    { key: 'job', icon: 'job' as MetaIconKey, text: store.basicInfo.jobTitle || '全栈开发工程师' },
-    { key: 'location', icon: 'location' as MetaIconKey, text: store.basicInfo.expectedLocation || '深圳' },
-    { key: 'salary', icon: 'salary' as MetaIconKey, text: store.basicInfo.expectedSalary || '面议' },
-    { key: 'education', icon: 'education' as MetaIconKey, text: store.basicInfo.educationLevel || '本科' },
+    { key: 'status', label: '状态', icon: 'status' as MetaIconKey, text: store.basicInfo.currentStatus || '离职-随时到岗' },
+    { key: 'job', label: '岗位', icon: 'job' as MetaIconKey, text: store.basicInfo.jobTitle || '全栈开发工程师' },
+    { key: 'location', label: '城市', icon: 'location' as MetaIconKey, text: store.basicInfo.expectedLocation || '深圳' },
+    { key: 'salary', label: '薪水', icon: 'salary' as MetaIconKey, text: store.basicInfo.expectedSalary || '面议' },
+    { key: 'education', label: '学历', icon: 'education' as MetaIconKey, text: store.basicInfo.educationLevel || '本科' },
   ])
 
   const simpleContactMeta = computed(() => [
-    { key: 'phone', icon: 'phone' as MetaIconKey, text: store.basicInfo.phone || '13400009999' },
-    { key: 'mail', icon: 'mail' as MetaIconKey, text: store.basicInfo.email || 'example@qq.com' },
+    { key: 'phone', label: '电话', icon: 'phone' as MetaIconKey, text: store.basicInfo.phone || '13400009999' },
+    { key: 'mail', label: '邮箱', icon: 'mail' as MetaIconKey, text: store.basicInfo.email || 'example@qq.com' },
   ])
 
   const lineThreeMeta = computed(() => {
     const items = [
-      { key: 'wechat', icon: 'wechat' as MetaIconKey, text: store.basicInfo.wechat || '', isLink: false },
-      { key: 'currentCity', icon: 'currentCity' as MetaIconKey, text: store.basicInfo.currentCity || '', isLink: false },
-      { key: 'website', icon: 'website' as MetaIconKey, text: store.basicInfo.website || '', isLink: true },
-      { key: 'github', icon: 'github' as MetaIconKey, text: store.basicInfo.github || '', isLink: true },
-      { key: 'blog', icon: 'blog' as MetaIconKey, text: store.basicInfo.blog || '', isLink: true },
+      { key: 'wechat', label: '微信', icon: 'wechat' as MetaIconKey, text: store.basicInfo.wechat || '', isLink: false },
+      { key: 'currentCity', label: '当前', icon: 'currentCity' as MetaIconKey, text: store.basicInfo.currentCity || '', isLink: false },
+      { key: 'website', label: '主页', icon: 'website' as MetaIconKey, text: store.basicInfo.website || '', isLink: true },
+      { key: 'github', label: '开源', icon: 'github' as MetaIconKey, text: store.basicInfo.github || '', isLink: true },
+      { key: 'blog', label: '博客', icon: 'blog' as MetaIconKey, text: store.basicInfo.blog || '', isLink: true },
     ]
 
     return items

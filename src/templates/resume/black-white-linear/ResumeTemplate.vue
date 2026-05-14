@@ -1,9 +1,11 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed } from 'vue'
 import { toHref } from '../../shared/metaIcons'
 import { useResumeTemplateData } from '../../shared/useResumeTemplateData'
+import { useTemplateCustomization } from '../../shared/useTemplateCustomization'
 
 const { store, hasAnyContent, moduleOrderStyle } = useResumeTemplateData()
+const { cssVars } = useTemplateCustomization()
 
 const headerContact = computed(() => {
   const phone = store.basicInfo.phone.trim()
@@ -28,7 +30,7 @@ const baseMetaLineTwo = computed(() => {
   const items = [
     store.basicInfo.currentStatus.trim(),
     store.basicInfo.jobTitle.trim(),
-    (store.basicInfo.expectedLocation || store.basicInfo.currentCity).trim(),
+    store.basicInfo.expectedLocation.trim(),
     store.basicInfo.expectedSalary.trim(),
   ].filter(Boolean)
 
@@ -37,8 +39,10 @@ const baseMetaLineTwo = computed(() => {
 
 const baseMetaLineThree = computed(() => {
   const items: string[] = []
+  const location = store.basicInfo.location.trim()
   const wechat = store.basicInfo.wechat.trim()
   const currentCity = store.basicInfo.currentCity.trim()
+  if (location) items.push(`所在地: ${location}`)
   if (wechat) items.push(`微信: ${wechat}`)
   if (currentCity) items.push(`现居: ${currentCity}`)
   return items.join(' | ')
@@ -50,6 +54,7 @@ const extraLinks = computed(() => {
     .filter(Boolean)
 
   return items.map((text) => ({
+    label: '',
     text,
     href: toHref(text),
   }))
@@ -57,7 +62,7 @@ const extraLinks = computed(() => {
 </script>
 
 <template>
-  <div class="resume-template-black-white-linear">
+  <div class="resume-template-black-white-linear" :style="cssVars">
     <header v-if="store.isModuleVisible('basicInfo')" class="resume-header">
       <div class="header-main">
         <h1 class="name">{{ store.basicInfo.name || '超级简历' }}</h1>
@@ -66,7 +71,7 @@ const extraLinks = computed(() => {
         <p v-if="baseMetaLineTwo" class="header-meta">{{ baseMetaLineTwo }}</p>
         <p v-if="baseMetaLineThree" class="header-meta">{{ baseMetaLineThree }}</p>
         <div v-if="extraLinks.length" class="header-links">
-          <a v-for="item in extraLinks" :key="item.text" :href="item.href" target="_blank" rel="noopener noreferrer">{{ item.text }}</a>
+          <a v-for="item in extraLinks" :key="item.text" :href="item.href" target="_blank" rel="noopener noreferrer"><span class="meta-label" v-if="item.label">{{ item.label }}: </span>{{ item.text }}</a>
         </div>
       </div>
 
@@ -105,21 +110,19 @@ const extraLinks = computed(() => {
         <div class="entry-head">
           <p class="entry-main">
             <strong>{{ project.name }}</strong>
+            <span v-if="project.role">{{ project.role }}</span>
           </p>
           <span class="entry-date">{{ project.startDate }} ~ {{ project.endDate || '至今' }}</span>
         </div>
-        <p v-if="project.role" class="entry-subline">
-          <span>{{ project.role }}</span>
-        </p>
         <p v-if="project.link" class="entry-link-row">
-          <a class="entry-link" :href="project.link" target="_blank" rel="noopener noreferrer">{{ project.link }}</a>
+          <a class="entry-link" :href="project.link" target="_blank" rel="noopener noreferrer">项目链接：{{ project.link }}</a>
         </p>
         <div v-if="project.introduction">
-          <p class="project-block-title">项目介绍</p>
+          <p v-if="store.showProjectSubtitles" class="project-block-title">项目介绍</p>
           <div class="entry-rich" v-html="project.introduction"></div>
         </div>
         <div v-if="project.mainWork">
-          <p class="project-block-title">主要工作</p>
+          <p v-if="store.showProjectSubtitles" class="project-block-title">主要工作</p>
           <div class="entry-rich" v-html="project.mainWork"></div>
         </div>
       </article>
@@ -172,7 +175,7 @@ const extraLinks = computed(() => {
       class="resume-section"
       :style="moduleOrderStyle('selfIntro')"
     >
-      <h2 class="section-title">其他</h2>
+      <h2 class="section-title">个人简介</h2>
       <div class="entry-rich" v-html="store.selfIntro"></div>
     </section>
 
@@ -183,14 +186,36 @@ const extraLinks = computed(() => {
 </template>
 
 <style scoped>
+/* 全局动态布局引擎支持 */
+:deep(.resume-header), :deep(.header) { 
+  display: flex !important;
+  flex-direction: var(--tpl-header-dir, row) !important;
+  justify-content: var(--tpl-header-justify, space-between) !important; 
+  align-items: var(--tpl-header-align-items, flex-start) !important;
+}
+:deep(.header-main), :deep(.name-row) { 
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: var(--tpl-header-align, flex-start) !important; 
+  text-align: var(--tpl-text-align, left) !important;
+}
+:deep(.contact-line), :deep(.meta-bar), :deep(.contact-info) { justify-content: var(--tpl-header-align, flex-start) !important; }
+:deep(.meta-icon-svg), :deep(.meta-icon-wrap) { display: var(--tpl-meta-icon-display, inline-block) !important; }
+:deep(.avatar-wrap), :deep(.header-avatar) { 
+  border-radius: var(--tpl-avatar-radius, 4px) !important; 
+  display: var(--tpl-avatar-display, block) !important; 
+  margin: var(--tpl-avatar-margin, 0) !important;
+}
+:deep(.meta-label) { display: var(--tpl-meta-label-display, none) !important; margin-right: 2px; }
 .resume-template-black-white-linear {
   box-sizing: border-box;
   width: 100%;
   min-height: 100%;
-  padding: 20px 28px 16px;
+  padding: var(--tpl-page-padding-y, 20px) var(--tpl-page-padding-x, 28px);
   color: #111;
   display: flex;
   flex-direction: column;
+  font-family: var(--tpl-font, 'Noto Sans SC', sans-serif);
 }
 
 .resume-header {
@@ -273,7 +298,7 @@ const extraLinks = computed(() => {
 }
 
 .resume-section {
-  margin-bottom: 10px;
+  margin-bottom: var(--tpl-section-gap, 10px);
 }
 
 .resume-section:last-of-type {
@@ -281,12 +306,13 @@ const extraLinks = computed(() => {
 }
 
 .section-title {
-  margin: 0 0 8px;
+  margin-top: var(--tpl-title-gap-top, 0px);
+  margin-bottom: var(--tpl-title-gap-bottom, 8px);
   padding: 0 0 6px;
   font-size: 16px;
   font-weight: 700;
   color: #111;
-  border-bottom: 1px solid #2c2c2c;
+  border-bottom: 1px solid var(--tpl-primary, #2c2c2c);
   line-height: 1.3;
 }
 
@@ -350,11 +376,19 @@ const extraLinks = computed(() => {
   font-weight: 700;
 }
 
+.project-block-title {
+  margin-top: 6px;
+  margin-bottom: 1px;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 500;
+}
+
 .entry-rich {
   margin-top: 3px;
   color: #111;
-  font-size: 14px;
-  line-height: 1.85;
+  font-size: var(--tpl-font-size, 14px);
+  line-height: var(--tpl-line-height, 1.85);
 }
 
 .empty {

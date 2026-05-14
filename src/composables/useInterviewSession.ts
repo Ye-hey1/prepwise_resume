@@ -3,6 +3,7 @@ import { useAiConfigStore } from '@/stores/aiConfig'
 import { useResumeStore } from '@/stores/resume'
 import {
   requestInterviewTurn,
+  requestCoachingTurn,
   generateDrillQuestions,
   evaluateDrillAnswers,
   type FinalEvaluation,
@@ -11,10 +12,17 @@ import {
   type InterviewTurnScore,
   type ResumeSnapshot,
   type DrillQuestionRaw,
+  type CoachingTurnRequest,
 } from '@/services/interviewService'
 import { getModelById } from '@/config/vrmModels'
 import type {
   ChatMessage,
+  CoachingMessage,
+  CoachingRecord,
+  CoachingRoundRecord,
+  CoachingStageConfig,
+  CoachingStageType,
+  CoachingTurnResponse,
   DrillAnswer,
   DrillQuestion,
   InterviewJdContext,
@@ -22,6 +30,7 @@ import type {
   InterviewReviewData,
   InterviewWorkflowPhase,
 } from '@/components/ai/interview/types'
+import { COACHING_STAGES } from '@/components/ai/interview/types'
 
 /**
  * 面试核心会话 composable
@@ -158,6 +167,23 @@ export function useInterviewSession(deps: {
   const drillQuestions = ref<DrillQuestion[]>([])
   const drillLoading = ref(false)
   const drillSubmitted = ref(false)
+
+  // ── Coaching 模式 ──
+  const coachingMessages = ref<CoachingMessage[]>([])
+  const coachingRoundIndex = ref(0)
+  const coachingTotalRounds = ref(26)
+  const coachingPaused = ref(false)
+  const coachingFinished = ref(false)
+  const coachingFinalSummary = ref('')
+  const coachingTechniqueSummary = ref<Array<{ technique: string; description: string; example: string }>>([])
+  const lastCoachingRecord = ref<CoachingRecord | null>(null)
+  /** 当前正在进行的轮次阶段索引（0=HR, 1=tech-1, 2=tech-2, 3=final） */
+  const coachingCurrentStageIdx = ref(0)
+  /** 当前阶段内的题目序号 */
+  const coachingStageRoundIndex = ref(0)
+  /** 是否处于轮次间等待状态（等待用户手动进入下一轮） */
+  const coachingWaitingForNextStage = ref(false)
+  let coachingAutoTimer: ReturnType<typeof setTimeout> | null = null
 
   // ── 错误 ──
   const errorMsg = ref('')
@@ -363,6 +389,127 @@ export function useInterviewSession(deps: {
     }
   }
 
+  /** 从 coaching 对话中构建复盘数据 */
+  function buildCoachingReviewData(): InterviewReviewData {
+    // 提取所有技巧标签
+    const allTechniques = coachingMessages.value
+      .filter(m => m.role === 'coach' && m.techniques?.length)
+      .flatMap(m => m.techniques || [])
+    const uniqueTechniques = [...new Set(allTechniques)]
+
+    // 提取教练点评作为 strengths
+    const coachComments = coachingMessages.value
+      .filter(m => m.role === 'coach')
+      .map(m => m.content.slice(0, 100))
+      .slice(-4)
+
+    // 提取面试官的问题作为 followUps
+    const interviewerQuestions = coachingMessages.value
+      .filter(m => m.role === 'interviewer')
+      .map(m => m.content.slice(0, 80))
+      .slice(-3)
+
+    // 将 coaching 消息转换为 ChatMessage 格式用于复盘展示
+    const chatHistory: ChatMessage[] = coachingMessages.value
+      .filter(m => m.role !== 'coach')
+      .map(m => ({
+        id: m.id,
+        role: m.role === 'interviewer' ? 'assistant' as const : 'user' as const,
+        content: m.content,
+        score: null,
+      }))
+
+    return {
+      summary: coachingFinalSummary.value || `本场观摩学习共 ${coachingRoundIndex.value} 轮，涵盖 ${uniqueTechniques.length} 种面试技巧。`,
+      strengths: uniqueTechniques.length > 0
+        ? [`本场展示了 ${uniqueTechniques.length} 种面试技巧`, ...uniqueTechniques.slice(0, 4).map(t => `技巧：${t}`)]
+        : ['已完成一场完整的面试观摩'],
+      weaknesses: ['建议结合观摩内容进行实战练习', '尝试用"我来回答"模式检验学习效果'],
+      followUps: interviewerQuestions,
+      suggestedResumeModules: [],
+      scoreBreakdown: null,
+      chatHistory,
+    }
+  }
+
+  /** 从 coaching 消息中构建完整的观摩记录 */
+  function buildCoachingRecord(): CoachingRecord {
+    const rounds: CoachingRoundRecord[] = []
+    const msgs = coachingMessages.value
+
+    // 按轮次分组：每轮 = interviewer + candidate + coach
+    for (let i = 0; i < msgs.length; i++) {
+      const msg = msgs[i]
+      if (msg.role === 'interviewer') {
+        const question = msg.content
+        let referenceAnswer = ''
+        let techniques: string[] = []
+        let coachComment = ''
+
+        // 找后续的 candidate 和 coach
+        for (let j = i + 1; j < msgs.length && j <= i + 3; j++) {
+          if (msgs[j].role === 'candidate') {
+            referenceAnswer = msgs[j].content
+          } else if (msgs[j].role === 'coach') {
+            coachComment = msgs[j].content
+            techniques = msgs[j].techniques || []
+          } else if (msgs[j].role === 'interviewer') {
+            break
+          }
+        }
+
+        if (question && referenceAnswer) {
+          rounds.push({ question, referenceAnswer, techniques, coachComment })
+        }
+      }
+    }
+
+    return {
+      id: `coaching_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      date: new Date().toISOString(),
+      targetRole: deps.getJdContext().targetRole || '未知岗位',
+      totalRounds: rounds.length,
+      rounds,
+      techniqueSummary: coachingTechniqueSummary.value,
+      finalSummary: coachingFinalSummary.value,
+    }
+  }
+
+  /** 从观摩记录生成 DrillQuestion 种子题目 */
+  function coachingRecordToDrillSeeds(record: CoachingRecord): DrillQuestion[] {
+    return record.rounds.map((round, idx) => {
+      // category 显示问题摘要（截取前 20 字）
+      const brief = round.question.replace(/\s+/g, '').slice(0, 20)
+      const category = brief.length < round.question.replace(/\s+/g, '').length ? brief + '...' : brief
+      const focusArea = inferQuestionCategory(round.question)
+
+      return {
+        id: idx + 1,
+        question: round.question,
+        category,
+        focusArea,
+        difficulty: 3,
+        intent: round.coachComment.slice(0, 80),
+        framework: round.techniques.length > 0 ? round.techniques.join(' + ') : 'STAR',
+        thinkingPoints: round.techniques,
+        sampleAnswer: round.referenceAnswer,
+        referenceAnswer: round.referenceAnswer,
+      }
+    })
+  }
+
+  /** 根据问题内容推断分类 */
+  function inferQuestionCategory(question: string): string {
+    if (/自我介绍|介绍一下|简单介绍/.test(question)) return '自我介绍'
+    if (/项目|负责|难点|挑战|架构|优化|落地/.test(question)) return '项目深挖'
+    if (/冲突|压力|协作|沟通|失败|复盘|管理/.test(question)) return '行为场景'
+    if (/什么是|原理|区别|为什么|如何实现|底层/.test(question)) return '技术原理'
+    if (/场景|假设|如果|遇到|怎么处理/.test(question)) return '场景模拟'
+    if (/团队|带人|管理|推进|跨部门/.test(question)) return '团队协作'
+    if (/业务|用户|价值|指标|增长/.test(question)) return '业务思维'
+    return '综合能力'
+  }
+
   // ═══ 准备配置 ═══
 
   function buildInitialPrepConfig(): InterviewPrepConfig {
@@ -379,6 +526,13 @@ export function useInterviewSession(deps: {
   }
 
   function handleConfirmPrep() {
+    syncPrepSettings()
+    errorMsg.value = ''
+    workflowPhase.value = 'simulation'
+  }
+
+  /** 只同步设置到内部状态，不跳转阶段 */
+  function syncPrepSettings() {
     prepConfig.value = {
       ...prepConfig.value,
       hintLimit: Math.max(1, Math.min(5, prepConfig.value.hintLimit)),
@@ -387,8 +541,17 @@ export function useInterviewSession(deps: {
     }
     mode.value = prepConfig.value.mode
     deps.durationMinutes.value = prepConfig.value.durationMinutes
-    errorMsg.value = ''
-    workflowPhase.value = 'simulation'
+
+    // coaching 模式下设置总轮次
+    if (prepConfig.value.mode === 'coaching') {
+      const selectedStage = prepConfig.value.coachingStage || 'full'
+      if (selectedStage === 'full') {
+        coachingTotalRounds.value = COACHING_STAGES.reduce((sum, s) => sum + s.roundCount, 0)
+      } else {
+        const stage = COACHING_STAGES.find(s => s.type === selectedStage)
+        coachingTotalRounds.value = stage?.roundCount || 7
+      }
+    }
   }
 
   function syncPrepConfigFromJd(jdText: string) {
@@ -396,7 +559,7 @@ export function useInterviewSession(deps: {
     const ctx = deps.getJdContext()
     prepConfig.value = {
       ...prepConfig.value,
-      mode: mode.value,
+      // 保留用户已设置的 mode，不用当前 mode.value 覆盖
       durationMinutes: deps.durationMinutes.value,
       difficulty,
       focusAreas: ctx.focusAreas,
@@ -511,6 +674,276 @@ export function useInterviewSession(deps: {
     }
   }
 
+  // ═══ Coaching 模式操作 ═══
+
+  function getCoachingDelay(): number {
+    const speed = prepConfig.value.coachingSpeed || 'normal'
+    switch (speed) {
+      case 'fast': return 1000
+      case 'slow': return 5000
+      default: return 3000
+    }
+  }
+
+  function buildCoachingPreviousRounds(): string {
+    if (coachingMessages.value.length === 0) return ''
+    // 取最近 6 条消息作为上下文摘要
+    const recent = coachingMessages.value.slice(-6)
+    return recent.map(msg => {
+      const roleLabel = msg.role === 'interviewer' ? '面试官' : msg.role === 'candidate' ? '候选人' : '教练'
+      const content = msg.content.length > 120 ? msg.content.slice(0, 120) + '...' : msg.content
+      return `[${roleLabel}] ${content}`
+    }).join('\n')
+  }
+
+  function newCoachingMessageId(): string {
+    return `coaching_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+  }
+
+  /** 延迟工具函数 */
+  function coachingDelay(ms: number): Promise<void> {
+    return new Promise(resolve => {
+      coachingAutoTimer = setTimeout(resolve, ms)
+    })
+  }
+
+  async function runCoachingTurn(command: 'start' | 'continue' | 'finish') {
+    if (isLoading.value || coachingFinished.value) return
+    isLoading.value = true
+    errorMsg.value = ''
+
+    try {
+      // 获取当前阶段配置
+      const selectedStage = prepConfig.value.coachingStage || 'full'
+      const currentStage = selectedStage === 'full'
+        ? COACHING_STAGES[coachingCurrentStageIdx.value]
+        : COACHING_STAGES.find(s => s.type === selectedStage)
+
+      const response = await requestCoachingTurn({
+        config: { ...aiConfig.getConfigForFeature('interview') },
+        command,
+        roundIndex: coachingRoundIndex.value + 1,
+        totalRounds: coachingTotalRounds.value,
+        resumeSnapshot: resumeSnapshot.value,
+        jobContext: buildJobContextPayload(),
+        previousRounds: buildCoachingPreviousRounds(),
+        interviewerStyle: prepConfig.value.interviewerStyle || 'balanced',
+        followUpDepth: prepConfig.value.followUpDepth || 2,
+        stage: currentStage,
+        stageRoundIndex: coachingStageRoundIndex.value + 1,
+      })
+
+      coachingRoundIndex.value = response.roundIndex || (coachingRoundIndex.value + 1)
+
+      // 如果 AI 只返回了面试官提问但没有候选人回答，说明输出不完整
+      // 显示面试官提问后，重新请求补全候选人回答（不计入阶段题数）
+      if (response.interviewerQuestion && !response.candidateAnswer) {
+        isLoading.value = false
+        coachingMessages.value.push({
+          id: newCoachingMessageId(),
+          role: 'interviewer',
+          content: response.interviewerQuestion,
+        })
+        if (!coachingPaused.value) {
+          await coachingDelay(1500)
+          if (!coachingPaused.value && !coachingFinished.value) {
+            void runCoachingTurn('continue')
+          }
+        }
+        return
+      }
+
+      // 回答完整，计入阶段题数
+      coachingStageRoundIndex.value++
+
+      // 全流程模式下检查是否当前阶段已完成
+      if (selectedStage === 'full' && currentStage && coachingStageRoundIndex.value >= currentStage.roundCount) {
+        if (coachingCurrentStageIdx.value < COACHING_STAGES.length - 1) {
+          coachingWaitingForNextStage.value = true
+          clearCoachingTimer()
+          const nextStage = COACHING_STAGES[coachingCurrentStageIdx.value + 1]
+          coachingMessages.value.push({
+            id: newCoachingMessageId(),
+            role: 'coach',
+            content: `${currentStage.label} 已完成全部 ${currentStage.roundCount} 题。\n下一轮：【${nextStage.label}】— ${nextStage.interviewerRole}\n考察维度：${nextStage.focusDimensions.join('、')}\n\n请点击下方"进入下一轮"继续。`,
+            techniques: ['轮次完成'],
+          })
+          // 先显示本轮完整内容再结束
+        }
+      }
+
+      // 单轮模式下检查是否达到题数上限
+      if (selectedStage !== 'full' && currentStage && coachingStageRoundIndex.value >= currentStage.roundCount) {
+        // 触发结束
+        coachingFinished.value = true
+        coachingFinalSummary.value = ''
+        deps.stopTimer()
+        lastCoachingRecord.value = buildCoachingRecord()
+        reviewData.value = buildCoachingReviewData()
+        // 不立即跳转，先显示本轮内容
+      }
+
+      isLoading.value = false
+
+      // 逐步显示：面试官提问 → 停顿 → 候选人回答 → 停顿 → 教练点评
+      if (response.interviewerQuestion) {
+        coachingMessages.value.push({
+          id: newCoachingMessageId(),
+          role: 'interviewer',
+          content: response.interviewerQuestion,
+        })
+      }
+
+      // 停顿模拟思考
+      if (response.candidateAnswer && !coachingPaused.value) {
+        await coachingDelay(1500)
+      }
+
+      if (response.candidateAnswer) {
+        coachingMessages.value.push({
+          id: newCoachingMessageId(),
+          role: 'candidate',
+          content: response.candidateAnswer,
+        })
+      }
+
+      // 停顿后显示点评
+      if (response.coachComment && !coachingPaused.value) {
+        await coachingDelay(1000)
+      }
+
+      if (response.coachComment) {
+        coachingMessages.value.push({
+          id: newCoachingMessageId(),
+          role: 'coach',
+          content: response.coachComment,
+          techniques: response.techniques,
+          scoreHighlight: response.techniques.length >= 3 ? 5 : response.techniques.length >= 2 ? 4 : 3,
+        })
+      }
+
+      // 检查是否结束
+      if (response.isFinished) {
+        coachingFinished.value = true
+        coachingFinalSummary.value = response.finalSummary || ''
+        coachingTechniqueSummary.value = response.techniqueSummary || []
+        deps.stopTimer()
+
+        // 构建观摩记录
+        lastCoachingRecord.value = buildCoachingRecord()
+
+        // 自动构建复盘数据并切换到训练复盘阶段
+        reviewData.value = buildCoachingReviewData()
+        workflowPhase.value = 'training'
+        return
+      }
+
+      // 自动推进下一轮（如果没有在等待切换阶段且未结束）
+      if (!coachingPaused.value && !coachingWaitingForNextStage.value && !coachingFinished.value) {
+        scheduleNextCoachingTurn()
+      }
+    } catch (error) {
+      errorMsg.value = formatErrorMessage(error)
+      isLoading.value = false
+    }
+  }
+
+  function scheduleNextCoachingTurn() {
+    clearCoachingTimer()
+    if (coachingPaused.value || coachingFinished.value) return
+    const delay = getCoachingDelay()
+    coachingAutoTimer = setTimeout(() => {
+      if (coachingRoundIndex.value >= coachingTotalRounds.value - 1) {
+        void runCoachingTurn('finish')
+      } else {
+        void runCoachingTurn('continue')
+      }
+    }, delay)
+  }
+
+  function clearCoachingTimer() {
+    if (coachingAutoTimer) {
+      clearTimeout(coachingAutoTimer)
+      coachingAutoTimer = null
+    }
+  }
+
+  function handleCoachingStart() {
+    coachingMessages.value = []
+    coachingRoundIndex.value = 0
+    coachingFinished.value = false
+    coachingPaused.value = false
+    coachingFinalSummary.value = ''
+    coachingTechniqueSummary.value = []
+    coachingCurrentStageIdx.value = 0
+    coachingStageRoundIndex.value = 0
+
+    // 根据选择的轮次计算总题数
+    const selectedStage = prepConfig.value.coachingStage || 'full'
+    if (selectedStage === 'full') {
+      coachingTotalRounds.value = COACHING_STAGES.reduce((sum, s) => sum + s.roundCount, 0)
+    } else {
+      const stage = COACHING_STAGES.find(s => s.type === selectedStage)
+      coachingTotalRounds.value = stage?.roundCount || 7
+      coachingCurrentStageIdx.value = COACHING_STAGES.findIndex(s => s.type === selectedStage)
+    }
+
+    deps.startTimer()
+    void runCoachingTurn('start')
+  }
+
+  function handleCoachingPause() {
+    coachingPaused.value = !coachingPaused.value
+    if (coachingPaused.value) {
+      clearCoachingTimer()
+      // 暂停面试计时器
+      deps.timerRunning.value = false
+    } else {
+      // 恢复面试计时器
+      deps.timerRunning.value = true
+      if (!coachingFinished.value && !isLoading.value) {
+        scheduleNextCoachingTurn()
+      }
+    }
+  }
+
+  function handleCoachingNext() {
+    clearCoachingTimer()
+    if (coachingFinished.value || isLoading.value) return
+    if (coachingRoundIndex.value >= coachingTotalRounds.value - 1) {
+      void runCoachingTurn('finish')
+    } else {
+      void runCoachingTurn('continue')
+    }
+  }
+
+  /** 用户手动进入下一轮面试阶段 */
+  function handleCoachingNextStage() {
+    if (!coachingWaitingForNextStage.value) return
+    coachingWaitingForNextStage.value = false
+    coachingCurrentStageIdx.value++
+    coachingStageRoundIndex.value = 0
+    // 继续下一轮
+    void runCoachingTurn('continue')
+  }
+
+  function handleCoachingFinish() {
+    clearCoachingTimer()
+    if (coachingFinished.value || isLoading.value) return
+    void runCoachingTurn('finish')
+  }
+
+  function handleCoachingReset() {
+    clearCoachingTimer()
+    coachingMessages.value = []
+    coachingRoundIndex.value = 0
+    coachingFinished.value = false
+    coachingPaused.value = false
+    coachingFinalSummary.value = ''
+    coachingTechniqueSummary.value = []
+    deps.resetTimer()
+  }
+
   // ═══ 重置 ═══
 
   function resetSession() {
@@ -527,6 +960,14 @@ export function useInterviewSession(deps: {
     drillLoading.value = false
     drillSubmitted.value = false
     reviewData.value = createEmptyReviewData()
+    // coaching reset
+    clearCoachingTimer()
+    coachingMessages.value = []
+    coachingRoundIndex.value = 0
+    coachingFinished.value = false
+    coachingPaused.value = false
+    coachingFinalSummary.value = ''
+    coachingTechniqueSummary.value = []
   }
 
   function resetWorkflow() {
@@ -569,6 +1010,11 @@ export function useInterviewSession(deps: {
     prepFocusInput, prepConfig, reviewData,
     drillQuestions, drillLoading, drillSubmitted,
     errorMsg, phaseItems,
+    // coaching state
+    coachingMessages, coachingRoundIndex, coachingTotalRounds,
+    coachingPaused, coachingFinished, coachingFinalSummary, coachingTechniqueSummary,
+    lastCoachingRecord, coachingCurrentStageIdx, coachingStageRoundIndex,
+    coachingWaitingForNextStage,
     // computed
     assistantTurns, userTurns, currentRound,
     isAnalysisPhase, isSimulationPhase, isTrainingPhase,
@@ -578,8 +1024,12 @@ export function useInterviewSession(deps: {
     runInterview, handleStart, handleTogglePause, handleFinish,
     handleReset, handleSend, handleOpenReview,
     resetSession, resetWorkflow,
+    // coaching actions
+    handleCoachingStart, handleCoachingPause, handleCoachingNext,
+    handleCoachingNextStage, handleCoachingFinish, handleCoachingReset,
+    buildCoachingRecord, coachingRecordToDrillSeeds,
     // prep actions
-    handleConfirmPrep, syncPrepConfigFromJd, buildInitialPrepConfig,
+    handleConfirmPrep, syncPrepConfigFromJd, buildInitialPrepConfig, syncPrepSettings,
     // drill actions
     handleGenerateDrill, handleDrillSubmit,
     // review actions

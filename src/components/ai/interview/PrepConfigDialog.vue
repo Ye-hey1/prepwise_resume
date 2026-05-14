@@ -14,6 +14,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   confirm: []
+  confirmAndStart: []
   close: []
   openAiConfig: []
 }>()
@@ -72,6 +73,22 @@ const depthOptions = [
   { key: 3, label: '深度', desc: '每题 3 轮追问' },
 ]
 
+// Coaching 速度选项
+const coachingSpeedOptions = [
+  { key: 'fast' as const, label: '快速', desc: '轮次间隔 1 秒' },
+  { key: 'normal' as const, label: '正常', desc: '轮次间隔 3 秒' },
+  { key: 'slow' as const, label: '慢速', desc: '轮次间隔 5 秒，便于细读' },
+]
+
+// Coaching 轮次选项
+const coachingStageOptions = [
+  { key: 'full' as const, label: '全流程', desc: '4 轮完整模拟（HR→技术一面→技术二面→终面）约 26 题' },
+  { key: 'hr' as const, label: 'HR 初面', desc: '软实力、动机、稳定性（6 题）' },
+  { key: 'tech-1' as const, label: '技术一面', desc: '专业基础、项目复盘（7 题）' },
+  { key: 'tech-2' as const, label: '技术二面', desc: '方案深度、商业思维（7 题）' },
+  { key: 'final' as const, label: '终面', desc: '行业格局、价值观（6 题）' },
+]
+
 // 时长/提示步进
 function adjustDuration(delta: number) {
   const next = prepConfig.value.durationMinutes + delta
@@ -114,52 +131,14 @@ const QUICK_VOICES = [
         <!-- 主体 -->
         <div class="prep-body">
           <div class="config-grid">
-            <!-- 左列：引擎与核心参数 -->
+            <!-- 左列：核心参数 -->
             <div class="config-col col-left">
-
-              <!-- 引擎配置区 -->
-              <div class="config-section section-accent">
-                <div class="section-label">引擎配置</div>
-                <div class="section-content">
-                  <div class="field-row">
-                    <span class="field-prefix">对话模型</span>
-                    <select class="field-select" :value="aiConfig.modelOverrides['interview']?.channelId ? (aiConfig.modelOverrides['interview'].channelId + '::' + aiConfig.modelOverrides['interview'].modelId) : ''" @change="onModelChange('interview', $event)">
-                      <option value="">跟随全局默认</option>
-                      <option v-for="opt in availableModelOptions" :key="opt.channelId+opt.modelId" :value="opt.channelId + '::' + opt.modelId">{{ opt.label }}</option>
-                    </select>
-                  </div>
-                  <div class="field-row">
-                    <span class="field-prefix">语音合成</span>
-                    <select class="field-select" :value="aiConfig.modelOverrides['tts']?.channelId ? (aiConfig.modelOverrides['tts'].channelId + '::' + aiConfig.modelOverrides['tts'].modelId) : ''" @change="onModelChange('tts', $event)">
-                      <option value="">跟随全局默认</option>
-                      <option v-for="opt in availableModelOptions" :key="opt.channelId+opt.modelId" :value="opt.channelId + '::' + opt.modelId">{{ opt.label }}</option>
-                    </select>
-                  </div>
-                  <div class="field-row">
-                    <span class="field-prefix">语音音色</span>
-                    <input
-                      class="field-input"
-                      v-model="prepConfig.voice"
-                      placeholder="如 male-qn-qingse"
-                    />
-                  </div>
-                  <div class="voice-tags">
-                    <button
-                      v-for="v in QUICK_VOICES"
-                      :key="v.id"
-                      class="voice-tag"
-                      :class="{ active: prepConfig.voice === v.id }"
-                      @click="prepConfig.voice = v.id"
-                    >{{ v.label }}</button>
-                  </div>
-                </div>
-              </div>
 
               <!-- 交互模式 -->
               <div class="config-section">
                 <div class="section-label">交互模式</div>
                 <div class="section-content">
-                  <div class="toggle-group">
+                  <div class="toggle-group toggle-group-3">
                     <button
                       class="toggle-btn"
                       :class="{ active: prepConfig.mode === 'candidate' }"
@@ -176,7 +155,18 @@ const QUICK_VOICES = [
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12h6M9 16h6M12 3C7.03 3 3 7.03 3 12v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7c0-4.97-4.03-9-9-9z"/></svg>
                       <span>我来提问</span>
                     </button>
+                    <button
+                      class="toggle-btn"
+                      :class="{ active: prepConfig.mode === 'coaching' }"
+                      @click="prepConfig.mode = 'coaching'"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                      <span>观摩学习</span>
+                    </button>
                   </div>
+                  <p v-if="prepConfig.mode === 'coaching'" class="mode-hint">
+                    AI 同时扮演面试官和候选人，你作为旁观者学习面试技巧
+                  </p>
                 </div>
               </div>
 
@@ -239,7 +229,7 @@ const QUICK_VOICES = [
 
               <!-- 时长与提示 -->
               <div class="config-section">
-                <div class="section-label">模拟深度</div>
+                <div class="section-label">模拟参数</div>
                 <div class="section-content stepper-row">
                   <div class="stepper-group">
                     <span class="stepper-name">时长</span>
@@ -259,10 +249,87 @@ const QUICK_VOICES = [
                   </div>
                 </div>
               </div>
+
+              <!-- Coaching 速度（仅 coaching 模式显示） -->
+              <div v-if="prepConfig.mode === 'coaching'" class="config-section">
+                <div class="section-label">面试轮次</div>
+                <div class="section-content">
+                  <div class="difficulty-list">
+                    <button
+                      v-for="item in coachingStageOptions"
+                      :key="item.key"
+                      class="diff-btn"
+                      :class="{ active: (prepConfig.coachingStage || 'full') === item.key }"
+                      @click="prepConfig.coachingStage = item.key"
+                    >
+                      <span class="diff-name">{{ item.label }}</span>
+                      <span class="diff-desc">{{ item.desc }}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Coaching 节奏（仅 coaching 模式显示） -->
+              <div v-if="prepConfig.mode === 'coaching'" class="config-section">
+                <div class="section-label">观摩节奏</div>
+                <div class="section-content">
+                  <div class="difficulty-list">
+                    <button
+                      v-for="item in coachingSpeedOptions"
+                      :key="item.key"
+                      class="diff-btn"
+                      :class="{ active: (prepConfig.coachingSpeed || 'normal') === item.key }"
+                      @click="prepConfig.coachingSpeed = item.key"
+                    >
+                      <span class="diff-name">{{ item.label }}</span>
+                      <span class="diff-desc">{{ item.desc }}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <!-- 右列：形象 & 上下文 -->
+            <!-- 右列：引擎、形象 & 上下文 -->
             <div class="config-col col-right">
+
+              <!-- 引擎配置区 -->
+              <div class="config-section section-accent">
+                <div class="section-label">引擎配置</div>
+                <div class="section-content">
+                  <div class="field-row">
+                    <span class="field-prefix">对话模型</span>
+                    <select class="field-select" :value="aiConfig.modelOverrides['interview']?.channelId ? (aiConfig.modelOverrides['interview'].channelId + '::' + aiConfig.modelOverrides['interview'].modelId) : ''" @change="onModelChange('interview', $event)">
+                      <option value="">跟随全局默认</option>
+                      <option v-for="opt in availableModelOptions" :key="opt.channelId+opt.modelId" :value="opt.channelId + '::' + opt.modelId">{{ opt.label }}</option>
+                    </select>
+                  </div>
+                  <div class="field-row">
+                    <span class="field-prefix">语音合成</span>
+                    <select class="field-select" :value="aiConfig.modelOverrides['tts']?.channelId ? (aiConfig.modelOverrides['tts'].channelId + '::' + aiConfig.modelOverrides['tts'].modelId) : ''" @change="onModelChange('tts', $event)">
+                      <option value="">跟随全局默认</option>
+                      <option v-for="opt in availableModelOptions" :key="opt.channelId+opt.modelId" :value="opt.channelId + '::' + opt.modelId">{{ opt.label }}</option>
+                    </select>
+                  </div>
+                  <div class="field-row">
+                    <span class="field-prefix">语音音色</span>
+                    <input
+                      class="field-input"
+                      v-model="prepConfig.voice"
+                      placeholder="如 male-qn-qingse"
+                    />
+                  </div>
+                  <div class="voice-tags">
+                    <button
+                      v-for="v in QUICK_VOICES"
+                      :key="v.id"
+                      class="voice-tag"
+                      :class="{ active: prepConfig.voice === v.id }"
+                      @click="prepConfig.voice = v.id"
+                    >{{ v.label }}</button>
+                  </div>
+                </div>
+              </div>
+
               <!-- 面试官形象 -->
               <div class="config-section">
                 <div class="section-label">面试官形象</div>
@@ -324,7 +391,10 @@ const QUICK_VOICES = [
         <!-- 底部 -->
         <footer class="prep-footer">
           <span class="footer-hint">设置会自动保存并应用到下一场模拟面试</span>
-          <button class="footer-btn" @click="emit('close')">确认保存</button>
+          <div class="footer-actions">
+            <button class="footer-btn footer-btn-secondary" @click="emit('confirm')">保存设置</button>
+            <button class="footer-btn" @click="emit('confirmAndStart')">保存并进入</button>
+          </div>
         </footer>
       </section>
     </div>
@@ -423,7 +493,7 @@ const QUICK_VOICES = [
 }
 .config-grid {
   display: grid;
-  grid-template-columns: 1.15fr 0.85fr;
+  grid-template-columns: 1fr 1fr;
   min-height: 100%;
 }
 .config-col { display: flex; flex-direction: column; }
@@ -519,6 +589,7 @@ const QUICK_VOICES = [
 
 /* ──── Toggle Group (模式切换) ──── */
 .toggle-group { display: flex; gap: 10px; }
+.toggle-group-3 { gap: 8px; }
 .toggle-btn {
   flex: 1;
   display: flex;
@@ -535,6 +606,7 @@ const QUICK_VOICES = [
   cursor: pointer;
   transition: all var(--transition-fast);
 }
+.toggle-group-3 .toggle-btn { padding: 10px 6px; font-size: 12px; gap: 5px; }
 .toggle-btn:hover {
   border-color: var(--border-accent);
   color: var(--primary-600);
@@ -544,6 +616,12 @@ const QUICK_VOICES = [
   border-color: var(--primary-500);
   color: var(--primary-600);
   box-shadow: 0 2px 8px rgba(43, 123, 184, 0.12);
+}
+.mode-hint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
 }
 
 /* ──── Difficulty List ──── */
@@ -701,6 +779,10 @@ const QUICK_VOICES = [
   font-size: 12px;
   color: var(--text-muted);
 }
+.footer-actions {
+  display: flex;
+  gap: 10px;
+}
 .footer-btn {
   padding: 9px 24px;
   background: var(--primary-500);
@@ -717,6 +799,19 @@ const QUICK_VOICES = [
   background: var(--primary-600);
   transform: translateY(-1px);
   box-shadow: 0 6px 16px rgba(43, 123, 184, 0.35);
+}
+.footer-btn-secondary {
+  background: var(--bg-card-muted);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  box-shadow: none;
+}
+.footer-btn-secondary:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-color-strong);
+  transform: none;
+  box-shadow: none;
 }
 
 /* ──── 响应式 ──── */

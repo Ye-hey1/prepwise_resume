@@ -279,8 +279,8 @@ async function runMatchStage(data: any) {
       signal,
     )
     store.matchResult = matchRes
-    // 备面洞察依赖匹配结果，串在后面
-    runPrepInsightStage(data, matchRes)
+    // 备面洞察只依赖匹配结果，立即启动不等全局诊断
+    runPrepInsightStage(data, matchRes, store.overview)
   } catch (e: any) {
     if (e.name === 'AbortError') return
     store.stageError.match = e.message || '人岗匹配失败'
@@ -307,9 +307,6 @@ async function runOverviewStage() {
       signal,
     )
     store.overview = overviewRes
-    if (store.jdData && store.matchResult && !store.prepInsight) {
-      runPrepInsightStage(store.jdData, store.matchResult, overviewRes)
-    }
   } catch (e: any) {
     if (e.name === 'AbortError') return
     store.stageError.overview = e.message || '全局诊断失败'
@@ -346,9 +343,8 @@ async function runSuggestionsStage(data: any) {
   }
 }
 
-/** 阶段 5：备面洞察（依赖匹配结果，串行在匹配之后） */
-async function runPrepInsightStage(data: any, matchRes: any, overview: any = store.overview) {
-  if (!overview) return
+/** 阶段 5：备面洞察（依赖匹配结果，overview 可选增强） */
+async function runPrepInsightStage(data: any, matchRes: any, overview: any = null) {
   store.stageLoading.prepInsight = true
   store.stageError.prepInsight = ''
   store.stageStartTime.prepInsight = Date.now()

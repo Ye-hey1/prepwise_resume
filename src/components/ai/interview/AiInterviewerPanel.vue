@@ -3,6 +3,7 @@ import { computed, onActivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import AiConfigDialog from '@/components/ai/AiConfigDialog.vue'
+import CoachingSimulationPanel from '@/components/ai/interview/CoachingSimulationPanel.vue'
 import InterviewDrillPanel from '@/components/ai/interview/InterviewDrillPanel.vue'
 import InterviewReviewPanel from '@/components/ai/interview/InterviewReviewPanel.vue'
 import InterviewSimulationPanel from '@/components/ai/interview/InterviewSimulationPanel.vue'
@@ -19,10 +20,12 @@ import { useInterviewTimer } from '@/composables/useInterviewTimer'
 import { useInterviewVoice } from '@/composables/useInterviewVoice'
 
 import { useAiConfigStore } from '@/stores/aiConfig'
+import { useCoachingHistoryStore } from '@/stores/coachingHistory'
 import { useJdAnalysisStore } from '@/stores/jdAnalysis'
 import { useLearningProgressStore } from '@/stores/learningProgress'
 import { useResumeStore } from '@/stores/resume'
 import { useThemeStore } from '@/stores/theme'
+import { useQuestionBankStore } from '@/stores/questionBank'
 import { savedQuestionToDrill } from '@/services/questionAdapter'
 
 import type {
@@ -30,6 +33,7 @@ import type {
   InterviewSessionRecord,
   InterviewWorkflowPhase,
 } from '@/components/ai/interview/types'
+import { COACHING_STAGES } from '@/components/ai/interview/types'
 import type { SavedQuestion } from '@/stores/questionBank'
 
 const timer = useInterviewTimer()
@@ -62,9 +66,11 @@ const session = useInterviewSession({
 
 const resumeStore = useResumeStore()
 const aiConfig = useAiConfigStore()
+const coachingHistoryStore = useCoachingHistoryStore()
 const jdAnalysisStore = useJdAnalysisStore()
 const learningProgressStore = useLearningProgressStore()
 const themeStore = useThemeStore()
+const questionBankStore = useQuestionBankStore()
 const router = useRouter()
 const route = useRoute()
 
@@ -94,6 +100,27 @@ const currentPhaseIndex = computed(() =>
 const isImmersive = computed(() =>
   session.isSimulationPhase.value,
 )
+
+const coachingStageLabel = computed(() => {
+  if (session.mode.value !== 'coaching') return ''
+  const selectedStage = session.prepConfig.value.coachingStage || 'full'
+  if (selectedStage === 'full') {
+    const stage = COACHING_STAGES[session.coachingCurrentStageIdx.value]
+    return stage ? `观摩 · ${stage.label}` : '观摩学习'
+  }
+  const stage = COACHING_STAGES.find(s => s.type === selectedStage)
+  return stage ? `观摩 · ${stage.label}` : '观摩学习'
+})
+
+const currentCoachingStageTotal = computed(() => {
+  const selectedStage = session.prepConfig.value.coachingStage || 'full'
+  if (selectedStage === 'full') {
+    const stage = COACHING_STAGES[session.coachingCurrentStageIdx.value]
+    return stage?.roundCount || 7
+  }
+  const stage = COACHING_STAGES.find(s => s.type === selectedStage)
+  return stage?.roundCount || 7
+})
 
 // 进入面试间时强制暗色模式，退出时恢复
 let previousTheme: string | null = null
@@ -252,7 +279,18 @@ const canGenerateDrill = computed(() =>
 )
 
 const showPrepDialog = ref(false)
-const trainingTab = ref<'drill' | 'review'>('drill')
+const trainingTab = ref<'drill' | 'review' | 'coaching-record'>('drill')
+const expandedRounds = ref<Set<number>>(new Set())
+
+function toggleRoundExpand(idx: number) {
+  if (expandedRounds.value.has(idx)) {
+    expandedRounds.value.delete(idx)
+  } else {
+    expandedRounds.value.add(idx)
+  }
+  // 触发响应式更新
+  expandedRounds.value = new Set(expandedRounds.value)
+}
 
 const historyReviewReturnPhase = ref<InterviewWorkflowPhase | null>(null)
 
@@ -288,6 +326,8 @@ function handleGoToPhase(phase: InterviewWorkflowPhase) {
   }
 
   if (phase === 'simulation' && session.canEnterPrep.value) {
+    // 进入面试前同步所有设置（包括 mode）
+    session.syncPrepSettings()
     session.workflowPhase.value = 'simulation'
     return
   }
@@ -356,7 +396,14 @@ function handleWorkbenchPrimaryAction() {
 
 function handleConfirmPrepDialog() {
   showPrepDialog.value = false
-  handleConfirmPrep()
+  // 只同步设置到 session，不跳转阶段
+  session.syncPrepSettings()
+}
+
+/** 保存设置并直接进入面试 */
+function handleConfirmAndStartPrep() {
+  showPrepDialog.value = false
+  session.handleConfirmPrep()
 }
 
 function handleBackToSimulation() {
@@ -444,6 +491,46 @@ function handleResetAll() {
   historyReviewReturnPhase.value = null
   session.handleReset()
   clearSessionState()
+}
+
+/** Coaching 模式：收藏问答到题库 */
+function handleCoachingSaveToBank(question: string, answer: string, techniques: string[]) {
+  const savedQuestion: SavedQuestion = {
+    content: question,
+    category: '观摩学习',
+    tags: techniques.length > 0 ? techniques : ['coaching'],
+    reference_answer: answer,
+    source: 'coaching',
+    mastery_level: 0,
+    focus_area: jd.jdContext.value.targetRole || '',
+  }
+  questionBankStore.addQuestion(savedQuestion)
+}
+
+/** Coaching 结束后：用观摩题目进入实战训练 */
+function handlePracticeFromCoaching() {
+  const record = session.lastCoachingRecord.value
+  if (!record || record.rounds.length === 0) return
+
+  // 将观摩记录的题目转为 drill 种子
+  const drillSeeds = session.coachingRecordToDrillSeeds(record)
+  session.drillQuestions.value = drillSeeds
+  session.drillSubmitted.value = false
+  session.errorMsg.value = ''
+  trainingTab.value = 'drill'
+}
+
+/** 从历史观摩记录进入实战训练 */
+function handlePracticeFromCoachingRecord(recordId: string) {
+  const record = coachingHistoryStore.getRecord(recordId)
+  if (!record || record.rounds.length === 0) return
+
+  const drillSeeds = session.coachingRecordToDrillSeeds(record)
+  session.drillQuestions.value = drillSeeds
+  session.drillSubmitted.value = false
+  session.errorMsg.value = ''
+  trainingTab.value = 'drill'
+  session.workflowPhase.value = 'training'
 }
 
 function handleStartNewRound() {
@@ -592,6 +679,15 @@ watch([
   }
 })
 
+// 观摩记录自动保存
+watch(() => session.lastCoachingRecord.value, (record) => {
+  if (record) {
+    coachingHistoryStore.saveRecord(record)
+    // 自动切换到观摩记录 tab
+    trainingTab.value = 'coaching-record'
+  }
+})
+
 watch(session.workflowPhase, (phase) => {
   if (phase !== 'training') {
     historyReviewReturnPhase.value = null
@@ -655,6 +751,7 @@ watch(session.workflowPhase, (phase) => {
 
 onMounted(() => {
   history.init()
+  coachingHistoryStore.init()
   window.addEventListener('keydown', handleGlobalKeydown)
 
   if (restoreDrillSeedFromQuestionBank()) return
@@ -806,6 +903,15 @@ onUnmounted(() => {
                   >
                     面试复盘
                   </button>
+                  <button
+                    v-if="session.lastCoachingRecord.value || coachingHistoryStore.records.length > 0"
+                    class="iv-training-tab"
+                    :class="{ active: trainingTab === 'coaching-record' }"
+                    type="button"
+                    @click="trainingTab = 'coaching-record'"
+                  >
+                    观摩记录
+                  </button>
                 </div>
               </header>
 
@@ -820,6 +926,78 @@ onUnmounted(() => {
                   @submit="(answers) => session.handleDrillSubmit(answers)"
                   @back="handleBackToAnalysis"
                 />
+
+                <!-- 观摩记录 -->
+                <div v-else-if="trainingTab === 'coaching-record'" class="coaching-record-panel">
+                  <!-- 最近一次观摩 -->
+                  <div v-if="session.lastCoachingRecord.value" class="cr-section">
+                    <div class="cr-section-header">
+                      <h3 class="cr-section-title">本次观摩记录</h3>
+                      <span class="cr-meta">{{ session.lastCoachingRecord.value.targetRole }} · {{ session.lastCoachingRecord.value.totalRounds }} 轮</span>
+                      <button class="cr-practice-btn" @click="handlePracticeFromCoaching">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+                        用这些题目练习
+                      </button>
+                    </div>
+                    <div class="cr-rounds">
+                      <div
+                        v-for="(round, idx) in session.lastCoachingRecord.value.rounds"
+                        :key="idx"
+                        class="cr-round-card"
+                        :class="{ expanded: expandedRounds.has(idx) }"
+                        @click="toggleRoundExpand(idx)"
+                      >
+                        <div class="cr-round-summary">
+                          <span class="cr-round-num">Q{{ idx + 1 }}</span>
+                          <p class="cr-question-brief">{{ round.question }}</p>
+                          <div class="cr-round-tags-inline" v-if="round.techniques.length && !expandedRounds.has(idx)">
+                            <span v-for="tag in round.techniques.slice(0, 2)" :key="tag" class="cr-tag-sm">{{ tag }}</span>
+                          </div>
+                          <svg class="cr-expand-icon" :class="{ rotated: expandedRounds.has(idx) }" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                        </div>
+                        <Transition name="cr-slide">
+                          <div v-if="expandedRounds.has(idx)" class="cr-round-detail" @click.stop>
+                            <div class="cr-answer-block">
+                              <span class="cr-answer-label">参考答案</span>
+                              <p class="cr-answer-text">{{ round.referenceAnswer }}</p>
+                            </div>
+                            <div v-if="round.coachComment" class="cr-coach-block">
+                              <span class="cr-answer-label" style="color: #d97706;">技巧点评</span>
+                              <p class="cr-answer-text">{{ round.coachComment }}</p>
+                            </div>
+                            <div v-if="round.techniques.length" class="cr-tags">
+                              <span v-for="tag in round.techniques" :key="tag" class="cr-tag">{{ tag }}</span>
+                            </div>
+                          </div>
+                        </Transition>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- 历史观摩记录 -->
+                  <div v-if="coachingHistoryStore.records.length > 0" class="cr-section cr-history">
+                    <h3 class="cr-section-title">历史观摩记录</h3>
+                    <div class="cr-history-list">
+                      <div v-for="record in coachingHistoryStore.records" :key="record.id" class="cr-history-item">
+                        <div class="cr-history-info">
+                          <span class="cr-history-role">{{ record.targetRole }}</span>
+                          <span class="cr-history-meta">{{ record.totalRounds }} 轮 · {{ new Date(record.date).toLocaleDateString() }}</span>
+                        </div>
+                        <div class="cr-history-actions">
+                          <button class="cr-history-btn" @click="handlePracticeFromCoachingRecord(record.id)">练习</button>
+                          <button class="cr-history-btn cr-history-btn--danger" @click="coachingHistoryStore.deleteRecord(record.id)">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- 空状态 -->
+                  <div v-if="!session.lastCoachingRecord.value && coachingHistoryStore.records.length === 0" class="cr-empty">
+                    <p>暂无观摩记录，完成一次观摩学习后会自动保存。</p>
+                  </div>
+                </div>
 
                 <InterviewReviewPanel
                   v-else
@@ -886,7 +1064,38 @@ onUnmounted(() => {
       </div>
 
       <div class="immersive-workspace">
+        <!-- Coaching 模式 -->
+        <CoachingSimulationPanel
+          v-if="session.mode.value === 'coaching'"
+          :messages="session.coachingMessages.value"
+          :is-loading="session.isLoading.value"
+          :error-msg="session.errorMsg.value"
+          :round-index="session.coachingRoundIndex.value"
+          :total-rounds="session.coachingTotalRounds.value"
+          :paused="session.coachingPaused.value"
+          :finished="session.coachingFinished.value"
+          :final-summary="session.coachingFinalSummary.value"
+          :technique-summary="session.coachingTechniqueSummary.value"
+          :timer-text="timer.timerText.value"
+          :session-started="timer.sessionStarted.value"
+          :stage-label="coachingStageLabel"
+          :stage-round-index="session.coachingStageRoundIndex.value"
+          :stage-round-total="currentCoachingStageTotal"
+          :waiting-next-stage="session.coachingWaitingForNextStage.value"
+          :current-stage-idx="session.coachingCurrentStageIdx.value"
+          :coaching-stage="session.prepConfig.value.coachingStage || 'full'"
+          @start="session.handleCoachingStart"
+          @pause="session.handleCoachingPause"
+          @next="session.handleCoachingNext"
+          @next-stage="session.handleCoachingNextStage"
+          @finish="session.handleCoachingFinish"
+          @reset="session.handleCoachingReset"
+          @save-to-bank="handleCoachingSaveToBank"
+        />
+
+        <!-- 常规模式（candidate / interviewer） -->
         <InterviewSimulationPanel
+          v-else
           :embedded="true"
           :mode="session.mode.value"
           :interviewer-model-id="session.prepConfig.value.interviewerModelId"
@@ -943,6 +1152,7 @@ onUnmounted(() => {
       :jd-context="jd.jdContext.value"
       :can-confirm="session.prepConfigValid.value"
       @confirm="handleConfirmPrepDialog"
+      @confirm-and-start="handleConfirmAndStartPrep"
       @close="showPrepDialog = false"
       @openAiConfig="showAiConfig = true"
     />
@@ -1220,6 +1430,248 @@ onUnmounted(() => {
   background: var(--bg-card);
   color: var(--primary-500);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+/* ──── 观摩记录面板 ──── */
+.coaching-record-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.cr-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.cr-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+}
+.cr-section-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.cr-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.cr-rounds {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cr-round-card {
+  padding: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+  overflow: hidden;
+}
+.cr-round-card:hover {
+  border-color: var(--border-accent);
+}
+.cr-round-card.expanded {
+  border-color: var(--primary-400);
+}
+.cr-round-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+}
+.cr-round-num {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--primary-50);
+  color: var(--primary-600);
+  font-size: 10px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+.cr-question-brief {
+  margin: 0;
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cr-round-tags-inline {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.cr-tag-sm {
+  padding: 1px 6px;
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.2);
+  border-radius: 10px;
+  font-size: 9px;
+  font-weight: 600;
+  color: #d97706;
+}
+:root[data-theme="dark"] .cr-tag-sm { color: #fbbf24; }
+.cr-expand-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 0.2s;
+}
+.cr-expand-icon.rotated {
+  transform: rotate(180deg);
+}
+.cr-round-detail {
+  padding: 0 14px 14px 52px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cr-slide-enter-active { transition: all 0.2s ease; }
+.cr-slide-leave-active { transition: all 0.15s ease; }
+.cr-slide-enter-from { opacity: 0; max-height: 0; }
+.cr-slide-leave-to { opacity: 0; max-height: 0; }
+.cr-coach-block {
+  padding: 10px 12px;
+  background: rgba(251, 191, 36, 0.04);
+  border-radius: 6px;
+  border-left: 3px solid rgba(251, 191, 36, 0.5);
+}
+.cr-answer-block {
+  padding: 10px 12px;
+  background: var(--bg-card-muted);
+  border-radius: 6px;
+  border-left: 3px solid #4ade80;
+}
+.cr-answer-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  color: #4ade80;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.cr-answer-text {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+.cr-tags {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.cr-tag {
+  padding: 2px 8px;
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.2);
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #d97706;
+}
+:root[data-theme="dark"] .cr-tag {
+  color: #fbbf24;
+}
+.cr-practice-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 6px 14px;
+  background: var(--primary-500);
+  color: var(--text-inverse);
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.cr-practice-btn:hover {
+  background: var(--primary-600);
+}
+.cr-history {
+  border-top: 1px solid var(--border-color);
+  padding-top: 20px;
+}
+.cr-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cr-history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+.cr-history-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cr-history-role {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.cr-history-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.cr-history-actions {
+  display: flex;
+  gap: 6px;
+}
+.cr-history-btn {
+  padding: 5px 12px;
+  background: var(--primary-50);
+  border: 1px solid var(--border-accent);
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--primary-600);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.cr-history-btn:hover {
+  background: var(--primary-500);
+  color: var(--text-inverse);
+  border-color: var(--primary-500);
+}
+.cr-history-btn--danger {
+  background: transparent;
+  border-color: var(--border-color);
+  color: var(--text-muted);
+}
+.cr-history-btn--danger:hover {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: #ef4444;
+  color: #ef4444;
+}
+.cr-empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
 }
 
 /* 沉浸式 Topbar */

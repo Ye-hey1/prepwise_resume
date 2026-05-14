@@ -4,7 +4,7 @@ import { candidateModeSystemPrompt } from '@/services/prompts/interviewCandidate
 import { interviewerModeSystemPrompt } from '@/services/prompts/interviewInterviewerPrompt'
 import { stripHtml as stripHtmlBase, cleanJsonResponse, nonStreamAIRequest, type AiConfig as StreamAiConfig } from '@/services/stream'
 
-export type InterviewMode = 'candidate' | 'interviewer'
+export type InterviewMode = 'candidate' | 'interviewer' | 'coaching'
 
 export type InterviewCommand = 'start' | 'continue' | 'finish'
 
@@ -1110,4 +1110,129 @@ export async function evaluateDrillAnswers(
       improvements: ['请重试专项训练评估'],
     }
   }
+}
+
+// ═══ Coaching 模式（观摩学习）═══
+
+import { coachingModeSystemPrompt, buildCoachingUserCommand } from '@/services/prompts/interviewCoachingPrompt'
+import type { CoachingTurnResponse, CoachingStageConfig, InterviewerStyle as CoachingStyleType } from '@/components/ai/interview/types'
+
+export interface CoachingTurnRequest {
+  config: AiConfig
+  command: 'start' | 'continue' | 'finish'
+  roundIndex: number
+  totalRounds: number
+  resumeSnapshot: ResumeSnapshot
+  jobContext?: InterviewJobContext
+  previousRounds: string
+  interviewerStyle?: string
+  followUpDepth?: number
+  stage?: CoachingStageConfig
+  stageRoundIndex?: number
+}
+
+function normalizeCoachingResponse(rawContent: string): CoachingTurnResponse {
+  const fallback: CoachingTurnResponse = {
+    interviewerQuestion: '',
+    candidateAnswer: '',
+    coachComment: '',
+    techniques: [],
+    phase: 'opening',
+    roundIndex: 1,
+    isFinished: false,
+  }
+
+  try {
+    const parsed = JSON.parse(cleanJsonResponse(rawContent)) as Record<string, unknown>
+    return {
+      interviewerQuestion: String(parsed.interviewerQuestion ?? '').trim(),
+      candidateAnswer: String(parsed.candidateAnswer ?? '').trim(),
+      coachComment: String(parsed.coachComment ?? '').trim(),
+      techniques: Array.isArray(parsed.techniques)
+        ? parsed.techniques.map(String).filter(Boolean)
+        : [],
+      phase: String(parsed.phase ?? 'opening'),
+      roundIndex: typeof parsed.roundIndex === 'number' ? parsed.roundIndex : 1,
+      isFinished: Boolean(parsed.isFinished),
+      finalSummary: typeof parsed.finalSummary === 'string' ? parsed.finalSummary : undefined,
+      techniqueSummary: Array.isArray(parsed.techniqueSummary)
+        ? parsed.techniqueSummary.map((item: any) => ({
+            technique: String(item?.technique ?? ''),
+            description: String(item?.description ?? ''),
+            example: String(item?.example ?? ''),
+          }))
+        : undefined,
+    }
+  } catch {
+    // 尝试从部分 JSON 中提取
+    const interviewerQuestion = extractJsonLikeStringField(rawContent, 'interviewerQuestion')
+    const candidateAnswer = extractJsonLikeStringField(rawContent, 'candidateAnswer')
+    const coachComment = extractJsonLikeStringField(rawContent, 'coachComment')
+
+    if (interviewerQuestion || candidateAnswer) {
+      return {
+        ...fallback,
+        interviewerQuestion,
+        candidateAnswer,
+        coachComment,
+      }
+    }
+    return fallback
+  }
+}
+
+export async function requestCoachingTurn(
+  request: CoachingTurnRequest,
+  signal?: AbortSignal,
+): Promise<CoachingTurnResponse> {
+  const endpoint = normalizeApiUrl(request.config.apiUrl)
+  const systemPrompt = coachingModeSystemPrompt({
+    style: (request.interviewerStyle as CoachingStyleType) || 'balanced',
+    followUpDepth: request.followUpDepth || 2,
+    stage: request.stage,
+  })
+
+  const resumeDigest = buildResumeDigest(request.resumeSnapshot, 'full')
+  const jobContextDigest = buildJobContextDigest(request.jobContext)
+
+  const userCommand = buildCoachingUserCommand({
+    command: request.command,
+    roundIndex: request.roundIndex,
+    resumeDigest,
+    jobContextDigest,
+    previousRounds: request.previousRounds,
+    totalRounds: request.totalRounds,
+    stage: request.stage,
+    stageRoundIndex: request.stageRoundIndex,
+  })
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${request.config.apiToken}`,
+    },
+    body: JSON.stringify({
+      model: request.config.modelName,
+      temperature: 0.7,
+      max_tokens: 1200,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userCommand },
+      ],
+      stream: false,
+    }),
+    signal,
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => '')
+    throw new Error(`AI请求失败 (${response.status}): ${errorText || response.statusText}`)
+  }
+
+  const payload = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string } }>
+  }
+  const content = payload.choices?.[0]?.message?.content?.trim() ?? ''
+  return normalizeCoachingResponse(content)
 }

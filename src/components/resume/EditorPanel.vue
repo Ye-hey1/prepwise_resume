@@ -92,15 +92,21 @@ watch(activeNavKey, (key) => {
   }
 })
 
-const expanded = reactive<Record<string, boolean>>({
-  basicInfo: true,
-  education: false,
-  skills: false,
-  workExperience: false,
-  projectExperience: false,
-  awards: false,
-  selfIntro: false,
-})
+/** 智能展开：有内容的模块自动展开 */
+function computeSmartExpand(): Record<string, boolean> {
+  const hasContent: Record<string, boolean> = {
+    basicInfo: true, // 始终展开
+    education: store.educationList.some(e => e.school?.trim() || e.major?.trim()),
+    skills: Boolean(store.skills?.replace(/<[^>]+>/g, '').trim()),
+    workExperience: store.workList.some(w => w.company?.trim() || w.description?.trim()),
+    projectExperience: store.projectList.some(p => p.name?.trim() || p.mainWork?.trim()),
+    awards: store.awardList.some(a => a.name?.trim()),
+    selfIntro: Boolean(store.selfIntro?.replace(/<[^>]+>/g, '').trim()),
+  }
+  return hasContent
+}
+
+const expanded = reactive<Record<string, boolean>>(computeSmartExpand())
 
 const editorMap: Record<string, Component> = {
   basicInfo: defineAsyncComponent(() => import('./editors/BasicInfoEditor.vue')),

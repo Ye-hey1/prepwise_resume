@@ -281,6 +281,8 @@ const canRedo = () => redoStack.value.length > 0
 
     <slot name="ai-panel" />
 
+    <slot name="footer" />
+
     <div v-if="isFocused" class="shortcut-hints">
       <span>Ctrl+B 粗体</span>
       <span class="hint-sep">/</span>
@@ -317,17 +319,17 @@ const canRedo = () => redoStack.value.length > 0
 
 <style scoped>
 .rich-editor-wrap {
-  border: 1px solid rgba(100, 120, 150, 0.18);
+  border: 1px solid var(--border-color-strong);
   border-radius: calc(var(--radius-lg) + 2px);
-  background: linear-gradient(180deg, rgba(255, 253, 250, 0.98), rgba(240, 244, 250, 0.96));
+  background: var(--bg-card);
   overflow: hidden;
   box-shadow: var(--shadow-sm);
   transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
 }
 
 .rich-editor-wrap.focused {
-  border-color: rgba(43, 123, 184, 0.34);
-  background: linear-gradient(180deg, var(--glass-high), rgba(242, 246, 250, 0.98));
+  border-color: var(--border-accent);
+  background: var(--bg-card);
   box-shadow: var(--shadow-md);
 }
 
@@ -336,8 +338,8 @@ const canRedo = () => redoStack.value.length > 0
   align-items: center;
   gap: 6px;
   padding: 12px 14px;
-  background: var(--glass-low);
-  border-bottom: 1px solid rgba(100, 120, 150, 0.12);
+  background: var(--bg-card-muted);
+  border-bottom: 1px solid var(--border-color);
   flex-wrap: wrap;
 }
 
@@ -377,16 +379,16 @@ const canRedo = () => redoStack.value.length > 0
 .tool-divider {
   width: 1px;
   height: 18px;
-  background: rgba(100, 120, 150, 0.18);
+  background: var(--border-color);
   margin: 0 2px;
 }
 
 .tool-select,
 .tool-color {
   height: 32px;
-  border: 1px solid rgba(100, 120, 150, 0.16);
+  border: 1px solid var(--border-color);
   border-radius: 10px;
-  background: var(--glass-high);
+  background: var(--bg-card);
 }
 
 .tool-select {
@@ -406,7 +408,7 @@ const canRedo = () => redoStack.value.length > 0
 
 .editor-area-wrap {
   position: relative;
-  background: rgba(250, 252, 255, 0.7);
+  background: var(--bg-input);
 }
 
 .editor-area {
@@ -437,8 +439,8 @@ const canRedo = () => redoStack.value.length > 0
   align-items: center;
   gap: 6px;
   padding: 10px 14px;
-  background: rgba(238, 243, 250, 0.86);
-  border-top: 1px solid rgba(100, 120, 150, 0.12);
+  background: var(--bg-card-muted);
+  border-top: 1px solid var(--border-color);
   font-size: 11px;
   color: var(--text-secondary);
   flex-wrap: wrap;
@@ -474,7 +476,7 @@ const canRedo = () => redoStack.value.length > 0
 .link-dialog-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(33, 27, 22, 0.3);
+  background: var(--bg-overlay);
   backdrop-filter: blur(4px);
   z-index: 200;
   display: flex;
@@ -484,11 +486,11 @@ const canRedo = () => redoStack.value.length > 0
 
 .link-dialog {
   width: min(420px, calc(100vw - 32px));
-  background: rgba(252, 253, 255, 0.98);
-  border: 1px solid rgba(100, 120, 150, 0.18);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color-strong);
   border-radius: 18px;
   padding: 22px;
-  box-shadow: 0 24px 60px rgba(33, 27, 22, 0.22);
+  box-shadow: var(--shadow-xl);
 }
 
 .link-dialog-title {
@@ -513,11 +515,11 @@ const canRedo = () => redoStack.value.length > 0
 
 .link-input {
   padding: 11px 13px;
-  border: 1px solid rgba(100, 120, 150, 0.18);
+  border: 1px solid var(--border-color-strong);
   border-radius: 12px;
   font-size: 13px;
   color: var(--text-primary);
-  background: var(--glass-high);
+  background: var(--bg-input);
   outline: none;
   transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }

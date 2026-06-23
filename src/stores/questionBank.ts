@@ -24,11 +24,31 @@ export interface SavedQuestion {
   intent?: string
   /** 推荐答题框架（STAR/PREP等） */
   framework?: string
+  
+  // InterviewRadar 集成字段
+  /** 真实面经源链接 */
+  source_url?: string
+  /** 题目来源类型 */
+  source_type?: 'ai_generated' | 'real_experience' | 'jd_analysis'
+  /** 原始发布时间（真实面经） */
+  posted_at?: string
+  /** 频次分数（基于真实面经出现频率） */
+  frequency_score?: number
+  /** 时效分数（基于发布时间衰减） */
+  recency_score?: number
+  /** 是否可追溯到真实数据 */
+  is_grounded?: boolean
+  /** 关联的简历项目/技能 */
+  resume_anchor?: string
+  /** 追问链（项目锚定生成的追问） */
+  follow_up_chain?: string[]
 }
 
 type QuestionRowPayload = Pick<
   SavedQuestion,
-  'content' | 'category' | 'tags' | 'reference_answer' | 'user_notes' | 'source' | 'mastery_level'
+  'content' | 'category' | 'tags' | 'reference_answer' | 'user_notes' | 'source' | 'mastery_level' | 
+  'source_url' | 'source_type' | 'posted_at' | 'frequency_score' | 'recency_score' | 
+  'is_grounded' | 'resume_anchor' | 'follow_up_chain'
 >
 
 function normalizeQuestionForDatabase(question: SavedQuestion): QuestionRowPayload {
@@ -40,6 +60,14 @@ function normalizeQuestionForDatabase(question: SavedQuestion): QuestionRowPaylo
     user_notes: question.user_notes ?? '',
     source: question.source ?? '',
     mastery_level: question.mastery_level ?? 0,
+    source_url: question.source_url ?? '',
+    source_type: question.source_type ?? 'ai_generated',
+    posted_at: question.posted_at ?? '',
+    frequency_score: question.frequency_score ?? 1,
+    recency_score: question.recency_score ?? 1,
+    is_grounded: question.is_grounded ?? false,
+    resume_anchor: question.resume_anchor ?? '',
+    follow_up_chain: Array.isArray(question.follow_up_chain) ? question.follow_up_chain : [],
   }
 }
 
@@ -53,6 +81,16 @@ function normalizeQuestionUpdate(payload: Partial<SavedQuestion>): Partial<Quest
   if (payload.user_notes !== undefined) next.user_notes = payload.user_notes
   if (payload.source !== undefined) next.source = payload.source
   if (payload.mastery_level !== undefined) next.mastery_level = payload.mastery_level
+  
+  // InterviewRadar 集成字段
+  if (payload.source_url !== undefined) next.source_url = payload.source_url
+  if (payload.source_type !== undefined) next.source_type = payload.source_type
+  if (payload.posted_at !== undefined) next.posted_at = payload.posted_at
+  if (payload.frequency_score !== undefined) next.frequency_score = payload.frequency_score
+  if (payload.recency_score !== undefined) next.recency_score = payload.recency_score
+  if (payload.is_grounded !== undefined) next.is_grounded = payload.is_grounded
+  if (payload.resume_anchor !== undefined) next.resume_anchor = payload.resume_anchor
+  if (payload.follow_up_chain !== undefined) next.follow_up_chain = Array.isArray(payload.follow_up_chain) ? payload.follow_up_chain : []
 
   return next
 }

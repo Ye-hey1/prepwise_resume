@@ -1,5 +1,6 @@
 import { computed } from 'vue'
 import { useResumeStore } from '@/stores/resume'
+import { formatResumeDate, formatResumeDateRange } from '@/utils/resumeDate'
 import type { MetaIconKey } from './metaIcons'
 import { toHref } from './metaIcons'
 
@@ -8,7 +9,7 @@ export function useResumeTemplateData() {
 
   const hasBasicInfo = computed(() => {
     const b = store.basicInfo
-    return Boolean(b.name || b.phone || b.email || b.jobTitle || b.wechat || b.currentCity || b.website || b.github || b.blog)
+    return Object.values(b).some((value) => value.trim())
   })
 
   const hasAnyContent = computed(
@@ -22,26 +23,32 @@ export function useResumeTemplateData() {
       Boolean(store.selfIntro)
   )
 
-  const lineOneMeta = computed(() => [
-    { key: 'phone', label: '电话', icon: 'phone' as MetaIconKey, text: store.basicInfo.phone || '13400009999' },
-    { key: 'mail', label: '邮箱', icon: 'mail' as MetaIconKey, text: store.basicInfo.email || 'example@qq.com' },
-    { key: 'user', label: '年龄', icon: 'user' as MetaIconKey, text: store.basicInfo.age || '26岁' },
-    { key: 'gender', label: '性别', icon: 'gender' as MetaIconKey, text: store.basicInfo.gender || '男' },
-    { key: 'workYears', label: '经验', icon: 'workYears' as MetaIconKey, text: store.basicInfo.workYears || '4年' },
-  ])
+  const lineOneMeta = computed(() =>
+    [
+      { key: 'phone', label: '电话', icon: 'phone' as MetaIconKey, text: store.basicInfo.phone.trim() },
+      { key: 'mail', label: '邮箱', icon: 'mail' as MetaIconKey, text: store.basicInfo.email.trim() },
+      { key: 'user', label: '年龄', icon: 'user' as MetaIconKey, text: store.basicInfo.age.trim() },
+      { key: 'gender', label: '性别', icon: 'gender' as MetaIconKey, text: store.basicInfo.gender.trim() },
+      { key: 'workYears', label: '经验', icon: 'workYears' as MetaIconKey, text: store.basicInfo.workYears.trim() },
+    ].filter((item) => item.text)
+  )
 
-  const lineTwoMeta = computed(() => [
-    { key: 'status', label: '状态', icon: 'status' as MetaIconKey, text: store.basicInfo.currentStatus || '离职-随时到岗' },
-    { key: 'job', label: '岗位', icon: 'job' as MetaIconKey, text: store.basicInfo.jobTitle || '全栈开发工程师' },
-    { key: 'location', label: '城市', icon: 'location' as MetaIconKey, text: store.basicInfo.expectedLocation || '深圳' },
-    { key: 'salary', label: '薪水', icon: 'salary' as MetaIconKey, text: store.basicInfo.expectedSalary || '面议' },
-    { key: 'education', label: '学历', icon: 'education' as MetaIconKey, text: store.basicInfo.educationLevel || '本科' },
-  ])
+  const lineTwoMeta = computed(() =>
+    [
+      { key: 'status', label: '状态', icon: 'status' as MetaIconKey, text: store.basicInfo.currentStatus.trim() },
+      { key: 'job', label: '岗位', icon: 'job' as MetaIconKey, text: store.basicInfo.jobTitle.trim() },
+      { key: 'location', label: '城市', icon: 'location' as MetaIconKey, text: store.basicInfo.expectedLocation.trim() },
+      { key: 'salary', label: '薪水', icon: 'salary' as MetaIconKey, text: store.basicInfo.expectedSalary.trim() },
+      { key: 'education', label: '学历', icon: 'education' as MetaIconKey, text: store.basicInfo.educationLevel.trim() },
+    ].filter((item) => item.text)
+  )
 
-  const simpleContactMeta = computed(() => [
-    { key: 'phone', label: '电话', icon: 'phone' as MetaIconKey, text: store.basicInfo.phone || '13400009999' },
-    { key: 'mail', label: '邮箱', icon: 'mail' as MetaIconKey, text: store.basicInfo.email || 'example@qq.com' },
-  ])
+  const simpleContactMeta = computed(() =>
+    [
+      { key: 'phone', label: '电话', icon: 'phone' as MetaIconKey, text: store.basicInfo.phone.trim() },
+      { key: 'mail', label: '邮箱', icon: 'mail' as MetaIconKey, text: store.basicInfo.email.trim() },
+    ].filter((item) => item.text)
+  )
 
   const lineThreeMeta = computed(() => {
     const items = [
@@ -75,6 +82,40 @@ export function useResumeTemplateData() {
     return { order: moduleOrderMap.value[key] ?? 99 }
   }
 
+  function educationTitleParts(edu: { major?: string; college?: string; degree?: string }): string[] {
+    return [edu.major, edu.college, edu.degree]
+      .map((value) => value?.trim() ?? '')
+      .filter(Boolean)
+  }
+
+  function educationTags(edu: { tags?: string[]; type?: string }): string[] {
+    const tags = Array.isArray(edu.tags) ? edu.tags : []
+    return tags.map((value) => value.trim()).filter(Boolean)
+  }
+
+  function workTitleParts(work: { department?: string; position?: string; location?: string }): string[] {
+    return [work.department, work.position]
+      .map((value) => value?.trim() ?? '')
+      .filter(Boolean)
+  }
+
+  function workSideParts(work: { location?: string; startDate?: string; endDate?: string }): string[] {
+    return [work.location?.trim() ?? '', dateRangeText(work.startDate ?? '', work.endDate ?? '')]
+      .filter(Boolean)
+  }
+
+  function linkHref(value: string): string {
+    return toHref(value)
+  }
+
+  function dateText(value: string): string {
+    return formatResumeDate(value)
+  }
+
+  function dateRangeText(start: string, end: string): string {
+    return formatResumeDateRange(start, end)
+  }
+
   return {
     store,
     hasAnyContent,
@@ -83,5 +124,12 @@ export function useResumeTemplateData() {
     simpleContactMeta,
     lineThreeMeta,
     moduleOrderStyle,
+    educationTitleParts,
+    educationTags,
+    workTitleParts,
+    workSideParts,
+    linkHref,
+    dateText,
+    dateRangeText,
   }
 }

@@ -54,13 +54,13 @@ function applyPreset(preset: (typeof colorPresets)[number]) {
 
 function apply() {
   const custom: Partial<TemplateCustomization> = {}
-  if (form.primaryColor) custom.primaryColor = form.primaryColor
-  if (form.accentColor) custom.accentColor = form.accentColor
+  custom.primaryColor = form.primaryColor || undefined
+  custom.accentColor = form.accentColor || undefined
+  custom.fontFamily = form.fontFamily || undefined
   if (form.fontFamily) {
-    custom.fontFamily = form.fontFamily
     loadFont(form.fontFamily)
   }
-  if (form.fontSize && form.fontSize !== 14) custom.fontSize = form.fontSize
+  if (form.fontSize !== undefined) custom.fontSize = form.fontSize
   if (form.sectionSpacing !== undefined) custom.sectionSpacing = form.sectionSpacing
   if (form.pagePaddingX !== undefined) custom.pagePaddingX = form.pagePaddingX
   if (form.pagePaddingY !== undefined) custom.pagePaddingY = form.pagePaddingY

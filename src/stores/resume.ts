@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { reactive, ref, watch } from 'vue'
 import { normalizeResumeTemplateKey, type ResumeTemplateKey } from '@/templates/resume'
+import { normalizeMonthInputValue } from '@/utils/resumeDate'
 
 export interface BasicInfo {
   name: string
@@ -34,6 +35,7 @@ export interface EducationEntry {
   gpa: string
   description: string
   type: string
+  tags: string[]
   location: string
 }
 
@@ -105,6 +107,59 @@ function genId(): string {
   return `item_${Date.now()}_${++_idCounter}`
 }
 
+function normalizeEducationTags(value: unknown): string[] {
+  const source = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.split(/[,，、\s]+/)
+      : []
+  return Array.from(new Set(source.map((item) => String(item).trim()).filter(Boolean)))
+}
+
+function normalizeEducationEntryDates(entry: EducationEntry): EducationEntry {
+  return {
+    ...entry,
+    startDate: normalizeMonthInputValue(entry.startDate),
+    endDate: normalizeMonthInputValue(entry.endDate),
+    tags: normalizeEducationTags(entry.tags),
+  }
+}
+
+function normalizeWorkEntryDates(entry: WorkEntry): WorkEntry {
+  return {
+    ...entry,
+    startDate: normalizeMonthInputValue(entry.startDate),
+    endDate: normalizeMonthInputValue(entry.endDate),
+  }
+}
+
+function normalizeProjectEntryDates(entry: ProjectEntry): ProjectEntry {
+  return {
+    ...entry,
+    startDate: normalizeMonthInputValue(entry.startDate),
+    endDate: normalizeMonthInputValue(entry.endDate),
+  }
+}
+
+function normalizeAwardEntryDate(entry: AwardEntry): AwardEntry {
+  return {
+    ...entry,
+    date: normalizeMonthInputValue(entry.date),
+  }
+}
+
+function moveListEntry<T>(list: T[], index: number, direction: MoveDirection) {
+  const target = direction === 'up' ? index - 1 : index + 1
+  if (index < 0 || target < 0 || target >= list.length) return
+
+  const current = list[index]
+  const next = list[target]
+  if (!current || !next) return
+
+  list[index] = next
+  list[target] = current
+}
+
 export const useResumeStore = defineStore('resume', () => {
   const modules = reactive<ModuleConfig[]>([
     { key: 'basicInfo', label: '基本信息', icon: '👤', visible: true },
@@ -149,6 +204,7 @@ export const useResumeStore = defineStore('resume', () => {
       gpa: '',
       description: '',
       type: '',
+      tags: [],
       location: '',
     },
   ])
@@ -277,6 +333,7 @@ export const useResumeStore = defineStore('resume', () => {
       gpa: '',
       description: '',
       type: '',
+      tags: [],
       location: '',
     })
   }
@@ -284,6 +341,11 @@ export const useResumeStore = defineStore('resume', () => {
   function removeEducation(id: string) {
     const idx = educationList.findIndex((e) => e.id === id)
     if (idx > -1) educationList.splice(idx, 1)
+  }
+
+  function moveEducation(id: string, direction: MoveDirection) {
+    const idx = educationList.findIndex((e) => e.id === id)
+    moveListEntry(educationList, idx, direction)
   }
 
   function addWork() {
@@ -304,6 +366,11 @@ export const useResumeStore = defineStore('resume', () => {
     if (idx > -1) workList.splice(idx, 1)
   }
 
+  function moveWork(id: string, direction: MoveDirection) {
+    const idx = workList.findIndex((e) => e.id === id)
+    moveListEntry(workList, idx, direction)
+  }
+
   function addProject() {
     projectList.push({
       id: genId(),
@@ -320,6 +387,11 @@ export const useResumeStore = defineStore('resume', () => {
   function removeProject(id: string) {
     const idx = projectList.findIndex((e) => e.id === id)
     if (idx > -1) projectList.splice(idx, 1)
+  }
+
+  function moveProject(id: string, direction: MoveDirection) {
+    const idx = projectList.findIndex((e) => e.id === id)
+    moveListEntry(projectList, idx, direction)
   }
 
   function addAward() {
@@ -549,17 +621,17 @@ export const useResumeStore = defineStore('resume', () => {
       selectedTemplateKey.value = normalizeResumeTemplateKey(data.selectedTemplateKey ?? data.selectedTemplateId)
       if (data.basicInfo) Object.assign(basicInfo, data.basicInfo)
       if (data.educationList) {
-        educationList.splice(0, educationList.length, ...data.educationList)
+        educationList.splice(0, educationList.length, ...data.educationList.map(normalizeEducationEntryDates))
       }
       if (data.skills !== undefined) skills.value = data.skills
       if (data.workList) {
-        workList.splice(0, workList.length, ...data.workList)
+        workList.splice(0, workList.length, ...data.workList.map(normalizeWorkEntryDates))
       }
       if (data.projectList) {
-        projectList.splice(0, projectList.length, ...data.projectList)
+        projectList.splice(0, projectList.length, ...data.projectList.map(normalizeProjectEntryDates))
       }
       if (data.awardList) {
-        awardList.splice(0, awardList.length, ...data.awardList)
+        awardList.splice(0, awardList.length, ...data.awardList.map(normalizeAwardEntryDate))
       }
       if (data.selfIntro !== undefined) selfIntro.value = data.selfIntro
       if (data.showProjectSubtitles !== undefined) showProjectSubtitles.value = data.showProjectSubtitles
@@ -616,26 +688,26 @@ export const useResumeStore = defineStore('resume', () => {
       educationList.splice(
         0,
         educationList.length,
-        ...data.educationList.map((e) => ({ ...e, id: e.id || genId() })),
+        ...data.educationList.map((e) => normalizeEducationEntryDates({ ...e, id: e.id || genId() })),
       )
     if (data.skills !== undefined) skills.value = data.skills
     if (data.workList)
       workList.splice(
         0,
         workList.length,
-        ...data.workList.map((w) => ({ ...w, id: w.id || genId() })),
+        ...data.workList.map((w) => normalizeWorkEntryDates({ ...w, id: w.id || genId() })),
       )
     if (data.projectList)
       projectList.splice(
         0,
         projectList.length,
-        ...data.projectList.map((p) => ({ ...p, id: p.id || genId() })),
+        ...data.projectList.map((p) => normalizeProjectEntryDates({ ...p, id: p.id || genId() })),
       )
     if (data.awardList)
       awardList.splice(
         0,
         awardList.length,
-        ...data.awardList.map((a) => ({ ...a, id: a.id || genId() })),
+        ...data.awardList.map((a) => normalizeAwardEntryDate({ ...a, id: a.id || genId() })),
       )
     if (data.selfIntro !== undefined) selfIntro.value = data.selfIntro
   }
@@ -663,7 +735,7 @@ export const useResumeStore = defineStore('resume', () => {
       blog: '',
     }
     Object.assign(basicInfo, defaultBasicInfo)
-    educationList.splice(0, educationList.length, { id: genId(), school: '', college: '', major: '', degree: '', startDate: '', endDate: '', gpa: '', description: '', type: '', location: '' })
+    educationList.splice(0, educationList.length, { id: genId(), school: '', college: '', major: '', degree: '', startDate: '', endDate: '', gpa: '', description: '', type: '', tags: [], location: '' })
     skills.value = ''
     workList.splice(0, workList.length, { id: genId(), company: '', department: '', position: '', startDate: '', endDate: '', location: '', description: '' })
     projectList.splice(0, projectList.length, { id: genId(), name: '', role: '', startDate: '', endDate: '', link: '', introduction: '', mainWork: '' })
@@ -715,10 +787,13 @@ export const useResumeStore = defineStore('resume', () => {
     isModuleVisible,
     addEducation,
     removeEducation,
+    moveEducation,
     addWork,
     removeWork,
+    moveWork,
     addProject,
     removeProject,
+    moveProject,
     addAward,
     removeAward,
     getCustomization,

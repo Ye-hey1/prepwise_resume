@@ -439,7 +439,7 @@ export function useInterviewSession(deps: {
 
     // 按轮次分组：每轮 = interviewer + candidate + coach
     for (let i = 0; i < msgs.length; i++) {
-      const msg = msgs[i]
+      const msg = msgs[i]!
       if (msg.role === 'interviewer') {
         const question = msg.content
         let referenceAnswer = ''
@@ -448,12 +448,13 @@ export function useInterviewSession(deps: {
 
         // 找后续的 candidate 和 coach
         for (let j = i + 1; j < msgs.length && j <= i + 3; j++) {
-          if (msgs[j].role === 'candidate') {
-            referenceAnswer = msgs[j].content
-          } else if (msgs[j].role === 'coach') {
-            coachComment = msgs[j].content
-            techniques = msgs[j].techniques || []
-          } else if (msgs[j].role === 'interviewer') {
+          const jMsg = msgs[j]!
+          if (jMsg.role === 'candidate') {
+            referenceAnswer = jMsg.content
+          } else if (jMsg.role === 'coach') {
+            coachComment = jMsg.content
+            techniques = jMsg.techniques || []
+          } else if (jMsg.role === 'interviewer') {
             break
           }
         }
@@ -761,7 +762,7 @@ export function useInterviewSession(deps: {
         if (coachingCurrentStageIdx.value < COACHING_STAGES.length - 1) {
           coachingWaitingForNextStage.value = true
           clearCoachingTimer()
-          const nextStage = COACHING_STAGES[coachingCurrentStageIdx.value + 1]
+          const nextStage = COACHING_STAGES[coachingCurrentStageIdx.value + 1]!
           coachingMessages.value.push({
             id: newCoachingMessageId(),
             role: 'coach',

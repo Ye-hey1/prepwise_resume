@@ -78,31 +78,34 @@ const IMPORTANT_BONES = [
 function logBoneDiag() {
   if (!vrm || boneDiagLogged) return
   boneDiagLogged = true
-  console.group('%c[VRM 骨骼诊断]', 'color: #6366f1; font-weight: bold')
-  console.log('模型已加载，开始检测骨骼可用性...')
-  for (const name of IMPORTANT_BONES) {
-    const norm = vrm.humanoid.getNormalizedBoneNode(name)
-    const raw = vrm.humanoid.getRawBoneNode(name)
-    const status = norm ? '✅' : '❌'
-    const rawStatus = raw ? '✅' : '❌'
-    console.log(`  ${status} normalized.${name} | ${rawStatus} raw.${name}`)
-    if (raw) {
-      console.log(`    raw rotation: (${raw.rotation.x.toFixed(3)}, ${raw.rotation.y.toFixed(3)}, ${raw.rotation.z.toFixed(3)})`)
+  // 仅在开发环境输出骨骼诊断日志
+  if (import.meta.env.DEV) {
+    console.group('%c[VRM 骨骼诊断]', 'color: #6366f1; font-weight: bold')
+    console.log('模型已加载，开始检测骨骼可用性...')
+    for (const name of IMPORTANT_BONES) {
+      const norm = vrm.humanoid.getNormalizedBoneNode(name)
+      const raw = vrm.humanoid.getRawBoneNode(name)
+      const status = norm ? '✅' : '❌'
+      const rawStatus = raw ? '✅' : '❌'
+      console.log(`  ${status} normalized.${name} | ${rawStatus} raw.${name}`)
+      if (raw) {
+        console.log(`    raw rotation: (${raw.rotation.x.toFixed(3)}, ${raw.rotation.y.toFixed(3)}, ${raw.rotation.z.toFixed(3)})`)
+      }
     }
-  }
-  // 检查弹簧骨骼
-  const sbm = (vrm as any).springBoneManager
-  if (sbm) {
-    const springBones = sbm.springBones || []
-    console.log(`弹簧骨骼数量: ${springBones.length}`)
-    for (const sb of springBones) {
-      const boneName = sb.bone?.name || sb.joint?.bone?.name || '?'
-      console.log(`  弹簧骨骼: ${boneName}`)
+    // 检查弹簧骨骼
+    const sbm = (vrm as any).springBoneManager
+    if (sbm) {
+      const springBones = sbm.springBones || []
+      console.log(`弹簧骨骼数量: ${springBones.length}`)
+      for (const sb of springBones) {
+        const boneName = sb.bone?.name || sb.joint?.bone?.name || '?'
+        console.log(`  弹簧骨骼: ${boneName}`)
+      }
+    } else {
+      console.log('无弹簧骨骼管理器')
     }
-  } else {
-    console.log('无弹簧骨骼管理器')
+    console.groupEnd()
   }
-  console.groupEnd()
 }
 
 // ═══ 口型同步 ═══

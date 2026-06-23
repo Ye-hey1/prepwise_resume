@@ -4,7 +4,7 @@ import { iconPaths, iconViewBox, isFilledIcon, toHref, type MetaIconKey } from '
 import { useResumeTemplateData } from '../../shared/useResumeTemplateData'
 import { useTemplateCustomization } from '../../shared/useTemplateCustomization'
 
-const { store, hasAnyContent, lineOneMeta, lineTwoMeta, lineThreeMeta, moduleOrderStyle } = useResumeTemplateData()
+const { store, hasAnyContent, lineOneMeta, lineTwoMeta, lineThreeMeta, moduleOrderStyle, educationTitleParts, educationTags, workTitleParts, workSideParts, linkHref, dateText, dateRangeText } = useResumeTemplateData()
 const { cssVars } = useTemplateCustomization()
 
 interface UnifiedMetaItem {
@@ -54,12 +54,6 @@ const allMetaItems = computed<UnifiedMetaItem[]>(() => {
   return items
 })
 
-function subLine(values: Array<string | undefined>): string {
-  return values
-    .map((value) => value?.trim() ?? '')
-    .filter(Boolean)
-    .join(' / ')
-}
 </script>
 
 <template>
@@ -72,7 +66,7 @@ function subLine(values: Array<string | undefined>): string {
           <span class="job-title" v-if="store.basicInfo.jobTitle">{{ store.basicInfo.jobTitle }}</span>
         </div>
         
-        <div class="meta-bar">
+        <div v-if="allMetaItems.length" class="meta-bar">
           <span v-for="item in allMetaItems" :key="item.key" class="meta-item">
             <span class="meta-icon-wrap">
               <svg class="meta-icon-svg" :class="{ 'meta-icon-fill': isFilledIcon(item.icon) }" :viewBox="iconViewBox[item.icon]" aria-hidden="true">
@@ -94,7 +88,7 @@ function subLine(values: Array<string | undefined>): string {
     <main class="content-body">
       <section v-if="store.isModuleVisible('selfIntro') && store.selfIntro" class="resume-section" :style="moduleOrderStyle('selfIntro')">
         <h2 class="section-title">个人简介</h2>
-        <div class="entry-rich intro-text" v-html="store.selfIntro"></div>
+        <div class="entry-rich intro-text" v-safe-html="store.selfIntro"></div>
       </section>
 
       <section
@@ -105,14 +99,17 @@ function subLine(values: Array<string | undefined>): string {
         <h2 class="section-title">工作经历</h2>
         <article v-for="work in store.workList" :key="work.id" class="entry" v-show="work.company">
           <div class="entry-header">
-            <h3 class="entry-company">{{ work.company }}</h3>
-            <span class="entry-date">{{ work.startDate }} - {{ work.endDate || '至今' }}</span>
+            <h3 class="entry-company entry-company-wrap">
+              {{ work.company }}
+              <span v-if="workTitleParts(work).length" class="entry-work-parts">
+                <span v-for="(part, partIdx) in workTitleParts(work)" :key="`${work.id}-work-title-${partIdx}`">{{ part }}</span>
+              </span>
+            </h3>
+            <span class="entry-side-line">
+              <span v-for="(part, partIdx) in workSideParts(work)" :key="`${work.id}-work-side-${partIdx}`">{{ part }}</span>
+            </span>
           </div>
-          <div class="entry-subtitle" v-if="subLine([work.department, work.position, work.location])">
-            <strong>{{ subLine([work.department, work.position]) }}</strong>
-            <span v-if="work.location" class="entry-loc"> | {{ work.location }}</span>
-          </div>
-          <div v-if="work.description" class="entry-rich" v-html="work.description"></div>
+          <div v-if="work.description" class="entry-rich" v-safe-html="work.description"></div>
         </article>
       </section>
 
@@ -123,24 +120,24 @@ function subLine(values: Array<string | undefined>): string {
       >
         <h2 class="section-title">项目经历</h2>
         <article v-for="project in store.projectList" :key="project.id" class="entry" v-show="project.name">
-          <div class="entry-header">
-            <h3 class="entry-company">
+          <div class="entry-header entry-header-project">
+            <h3 class="entry-company entry-project-name">
               {{ project.name }}
-              <span v-if="project.role" class="entry-role">{{ project.role }}</span>
             </h3>
-            <span class="entry-date">{{ project.startDate }} - {{ project.endDate || '至今' }}</span>
+            <span v-if="project.role" class="entry-inline-parts entry-project-role">{{ project.role }}</span>
+            <span class="entry-date">{{ dateRangeText(project.startDate, project.endDate) }}</span>
           </div>
           <div class="entry-subtitle" v-if="project.link">
-            <a :href="project.link" target="_blank" rel="noopener noreferrer" class="entry-link">项目链接：{{ project.link }}</a>
+            <a :href="linkHref(project.link)" target="_blank" rel="noopener noreferrer" class="entry-link">项目链接：{{ project.link }}</a>
           </div>
           <div v-if="project.introduction || project.mainWork">
             <template v-if="project.introduction">
               <p v-if="store.showProjectSubtitles" class="project-block-title">项目介绍</p>
-              <div class="entry-rich" v-html="project.introduction"></div>
+              <div class="entry-rich" v-safe-html="project.introduction"></div>
             </template>
             <template v-if="project.mainWork">
               <p v-if="store.showProjectSubtitles" class="project-block-title">主要工作</p>
-              <div class="entry-rich" v-html="project.mainWork"></div>
+              <div class="entry-rich" v-safe-html="project.mainWork"></div>
             </template>
           </div>
         </article>
@@ -153,22 +150,25 @@ function subLine(values: Array<string | undefined>): string {
       >
         <h2 class="section-title">教育经历</h2>
         <article v-for="edu in store.educationList" :key="edu.id" class="entry" v-show="edu.school">
-          <div class="entry-header">
-            <h3 class="entry-company">{{ edu.school }}</h3>
-            <span class="entry-date">{{ edu.startDate }} - {{ edu.endDate || '至今' }}</span>
+          <div class="entry-header entry-header-education">
+            <h3 class="entry-company entry-company-wrap entry-school-line">
+              {{ edu.school }}
+              <span v-if="educationTags(edu).length" class="entry-tags">
+                <span v-for="tag in educationTags(edu)" :key="`${edu.id}-edu-tag-${tag}`" class="entry-tag">{{ tag }}</span>
+              </span>
+            </h3>
+            <span v-if="educationTitleParts(edu).length" class="entry-inline-parts entry-education-parts">
+              <span v-for="(part, partIdx) in educationTitleParts(edu)" :key="`${edu.id}-edu-title-${partIdx}`">{{ part }}</span>
+            </span>
+            <span class="entry-date">{{ dateRangeText(edu.startDate, edu.endDate) }}</span>
           </div>
-          <div class="entry-subtitle" v-if="subLine([edu.major, edu.degree, edu.college])">
-            <strong>{{ subLine([edu.major, edu.degree]) }}</strong>
-            <span v-if="edu.college"> | {{ edu.college }}</span>
-            <span v-if="edu.location"> | {{ edu.location }}</span>
-          </div>
-          <div v-if="edu.description" class="entry-rich" v-html="edu.description"></div>
+          <div v-if="edu.description" class="entry-rich" v-safe-html="edu.description"></div>
         </article>
       </section>
 
       <section v-if="store.isModuleVisible('skills') && store.skills" class="resume-section" :style="moduleOrderStyle('skills')">
         <h2 class="section-title">专业技能</h2>
-        <div class="entry-rich" v-html="store.skills"></div>
+        <div class="entry-rich" v-safe-html="store.skills"></div>
       </section>
 
       <section
@@ -180,9 +180,9 @@ function subLine(values: Array<string | undefined>): string {
         <article v-for="award in store.awardList" :key="award.id" class="entry" v-show="award.name">
           <div class="entry-header">
             <h3 class="entry-company">{{ award.name }}</h3>
-            <span class="entry-date">{{ award.date }}</span>
+            <span class="entry-date">{{ dateText(award.date) }}</span>
           </div>
-          <div v-if="award.description" class="entry-rich" v-html="award.description"></div>
+          <div v-if="award.description" class="entry-rich" v-safe-html="award.description"></div>
         </article>
       </section>
 
@@ -373,6 +373,14 @@ function subLine(values: Array<string | undefined>): string {
   margin-bottom: 2px;
 }
 
+.entry-header-education,
+.entry-header-project {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 16px;
+}
+
 .entry-company {
   margin: 0;
   font-size: 15px;
@@ -380,17 +388,107 @@ function subLine(values: Array<string | undefined>): string {
   color: #0f172a;
 }
 
-.entry-company .entry-role {
+.entry-company-wrap {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+  row-gap: 2px;
+}
+
+.entry-school-line {
+  grid-column: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+.entry-project-name {
+  grid-column: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.entry-inline-parts {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  column-gap: 16px;
+  row-gap: 2px;
   color: #64748b;
-  font-weight: 400;
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.entry-work-parts {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  column-gap: 18px;
+  row-gap: 2px;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.entry-education-parts {
+  grid-column: 2;
+  justify-self: center;
+  text-align: center;
+}
+
+.entry-project-role {
+  grid-column: 2;
+  justify-self: center;
+  text-align: center;
+}
+
+.entry-tags {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.entry-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 0 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(14, 165, 233, 0.22);
+  background: rgba(14, 165, 233, 0.08);
+  color: var(--tpl-primary, #0ea5e9);
+  font-size: 11px !important;
+  line-height: 1;
+  font-weight: 700;
 }
 
 .entry-date {
+  grid-column: 3;
   font-size: 13px;
   color: #64748b;
   font-weight: 600;
   font-family: monospace;
+  justify-self: end;
+  white-space: nowrap;
+}
+
+.entry-side-line {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  column-gap: 12px;
+  row-gap: 2px;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: monospace;
+  white-space: nowrap;
 }
 
 .entry-subtitle {
@@ -399,7 +497,9 @@ function subLine(values: Array<string | undefined>): string {
   color: #334155;
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  column-gap: 18px;
+  row-gap: 2px;
 }
 
 .entry-subtitle strong {
@@ -474,6 +574,20 @@ function subLine(values: Array<string | undefined>): string {
 :deep(.entry-rich strong) {
   color: #0f172a;
   font-weight: 700;
+}
+
+:deep(.entry-rich a) {
+  color: var(--tpl-primary, #0ea5e9);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+:deep(.entry-rich a:hover) {
+  text-decoration: underline;
+}
+
+:deep(.entry-rich span[style*='font-size']) {
+  line-height: inherit;
 }
 
 .empty {

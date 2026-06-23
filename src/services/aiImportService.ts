@@ -11,6 +11,7 @@ import {
   RESUME_IMPORT_VISION_USER_PROMPT,
   RESUME_IMPORT_MIXED_USER_PROMPT,
 } from './prompts/resumeImportPrompt'
+import { normalizeMonthInputValue } from '@/utils/resumeDate'
 
 const md = new MarkdownIt({ breaks: true })
 
@@ -20,13 +21,24 @@ export interface AiConfig {
   modelName: string
 }
 
+type ImportListRecord = Record<string, string | undefined>
+type ImportEducationRecord = ImportListRecord & {
+  tags?: string[]
+}
+type ImportRecordLike = Record<string, string | string[] | undefined>
+
+function importTextField(item: ImportRecordLike, key: string): string {
+  const value = item[key]
+  return typeof value === 'string' ? value : ''
+}
+
 export interface ImportData {
   basicInfo?: Record<string, string>
-  educationList?: Array<Record<string, string>>
+  educationList?: ImportEducationRecord[]
   skills?: string
-  workList?: Array<Record<string, string>>
-  projectList?: Array<Record<string, string>>
-  awardList?: Array<Record<string, string>>
+  workList?: ImportListRecord[]
+  projectList?: ImportListRecord[]
+  awardList?: ImportListRecord[]
   selfIntro?: string
 }
 
@@ -61,23 +73,20 @@ export function validateImportData(data: ImportData): ImportValidationWarning[] 
   }
 
   // —— 日期合理性 ——
-  const dateRegex = /^\d{4}\.\d{2}/
-  const checkDateOrder = (
-    items: Array<Record<string, string>> | undefined,
-    listName: string,
-  ) => {
+  const dateRegex = /^\d{4}[.-]\d{2}/
+  const checkDateOrder = (items: ImportRecordLike[] | undefined, listName: string) => {
     if (!items) return
     for (let i = 0; i < items.length; i++) {
       const item = items[i]
       if (!item) continue
-      const start = item.startDate ?? item.start_date
-      const end = item.endDate ?? item.end_date
+      const start = importTextField(item, 'startDate') || importTextField(item, 'start_date')
+      const end = importTextField(item, 'endDate') || importTextField(item, 'end_date')
       if (
         start && end &&
         dateRegex.test(start) && dateRegex.test(end) &&
         start > end
       ) {
-        const label = item.company || item.school || item.name || `第${i + 1}条`
+        const label = importTextField(item, 'company') || importTextField(item, 'school') || importTextField(item, 'name') || `第${i + 1}条`
         warnings.push({
           field: `${listName}.${i}`,
           message: `「${label}」开始时间(${start})晚于结束时间(${end})`,
@@ -375,6 +384,10 @@ function mdToHtml(markdown: string): string {
   return md.render(markdown).trim()
 }
 
+function maybeMdToHtml(value: string | undefined): string | undefined {
+  return value ? mdToHtml(value) : value
+}
+
 /** 清理 AI 返回中可能存在的 markdown 代码块标记及前后多余文本 */
 function cleanJsonResponse(text: string): string {
   let cleaned = text.trim()
@@ -414,26 +427,26 @@ export function convertMarkdownFields(data: ImportData): ImportData {
 
   if (data.workList) {
     for (const work of data.workList) {
-      if (work.description) work.description = mdToHtml(work.description)
+      work.description = maybeMdToHtml(work.description)
     }
   }
 
   if (data.projectList) {
     for (const project of data.projectList) {
-      if (project.introduction) project.introduction = mdToHtml(project.introduction)
-      if (project.mainWork) project.mainWork = mdToHtml(project.mainWork)
+      project.introduction = maybeMdToHtml(project.introduction)
+      project.mainWork = maybeMdToHtml(project.mainWork)
     }
   }
 
   if (data.educationList) {
     for (const edu of data.educationList) {
-      if (edu.description) edu.description = mdToHtml(edu.description)
+      edu.description = maybeMdToHtml(edu.description)
     }
   }
 
   if (data.awardList) {
     for (const award of data.awardList) {
-      if (award.description) award.description = mdToHtml(award.description)
+      award.description = maybeMdToHtml(award.description)
     }
   }
 
@@ -562,23 +575,33 @@ function normalizeImportData(raw: unknown): ImportData {
     : {}
 
   // 列表类型：确保是数组，逐项确保是对象
-  const normalizeList = (items: unknown[]): Array<Record<string, string>> =>
+  const normalizeList = (items: unknown[], preserveTags = false): ImportRecordLike[] =>
     items.map((item) => {
       if (!item || typeof item !== 'object') return {}
-      const out: Record<string, string> = {}
+      const out: ImportRecordLike = {}
       for (const [k, v] of Object.entries(item)) {
-        out[k] = typeof v === 'string' ? v : String(v ?? '')
+        if (preserveTags && k === 'tags' && Array.isArray(v)) {
+          out[k] = v.map((tag) => String(tag).trim()).filter(Boolean)
+        } else {
+          out[k] = typeof v === 'string' ? v : String(v ?? '')
+        }
       }
+      const startDate = importTextField(out, 'startDate') || importTextField(out, 'start_date') || importTextField(out, 'startTime') || importTextField(out, 'start_time')
+      const endDate = importTextField(out, 'endDate') || importTextField(out, 'end_date') || importTextField(out, 'endTime') || importTextField(out, 'end_time')
+      if (startDate) out.startDate = normalizeMonthInputValue(startDate)
+      if (endDate) out.endDate = normalizeMonthInputValue(endDate)
+      const date = importTextField(out, 'date')
+      if (date) out.date = normalizeMonthInputValue(date)
       return out
     })
 
   return {
     basicInfo,
-    educationList: normalizeList(arr(source.educationList)),
+    educationList: normalizeList(arr(source.educationList), true) as ImportEducationRecord[],
     skills: str(source.skills),
-    workList: normalizeList(arr(source.workList)),
-    projectList: normalizeList(arr(source.projectList)),
-    awardList: normalizeList(arr(source.awardList)),
+    workList: normalizeList(arr(source.workList)) as ImportListRecord[],
+    projectList: normalizeList(arr(source.projectList)) as ImportListRecord[],
+    awardList: normalizeList(arr(source.awardList)) as ImportListRecord[],
     selfIntro: str(source.selfIntro ?? source.self_introduction ?? source.summary),
   }
 }

@@ -19,6 +19,23 @@ const undoStack = ref<string[]>([])
 const redoStack = ref<string[]>([])
 const MAX_UNDO = 50
 let undoLock = false
+let savedRange: Range | null = null
+
+function saveSelection() {
+  const selection = window.getSelection()
+  if (!selection || selection.rangeCount === 0) return
+  const range = selection.getRangeAt(0)
+  if (!editorRef.value?.contains(range.commonAncestorContainer)) return
+  savedRange = range.cloneRange()
+}
+
+function restoreSelection() {
+  if (!savedRange || !editorRef.value) return
+  const selection = window.getSelection()
+  if (!selection) return
+  selection.removeAllRanges()
+  selection.addRange(savedRange)
+}
 
 function pushUndoState() {
   if (undoLock) return
@@ -30,11 +47,15 @@ function pushUndoState() {
 }
 
 function handleUndo() {
-  if (undoStack.value.length === 0) return
+  if (undoStack.value.length <= 1) return
   undoLock = true
+  restoreSelection()
   const current = editorRef.value?.innerHTML ?? ''
   redoStack.value.push(current)
-  const prev = undoStack.value.pop()!
+  if (undoStack.value[undoStack.value.length - 1] === current) {
+    undoStack.value.pop()
+  }
+  const prev = undoStack.value[undoStack.value.length - 1] ?? ''
   if (editorRef.value) editorRef.value.innerHTML = prev
   onInput()
   undoLock = false
@@ -43,6 +64,7 @@ function handleUndo() {
 function handleRedo() {
   if (redoStack.value.length === 0) return
   undoLock = true
+  restoreSelection()
   const current = editorRef.value?.innerHTML ?? ''
   undoStack.value.push(current)
   const next = redoStack.value.pop()!
@@ -56,6 +78,7 @@ const linkUrl = ref('')
 const linkText = ref('')
 
 function openLinkDialog() {
+  saveSelection()
   const sel = window.getSelection()
   linkText.value = sel?.toString() ?? ''
   linkUrl.value = ''
@@ -66,6 +89,7 @@ function confirmLink() {
   if (!linkUrl.value) return
   const url = linkUrl.value.startsWith('http') ? linkUrl.value : `https://${linkUrl.value}`
   editorRef.value?.focus()
+  restoreSelection()
   if (linkText.value && window.getSelection()?.toString() !== linkText.value) {
     document.execCommand('insertHTML', false, `<a href="${url}" target="_blank" rel="noopener">${linkText.value}</a>`)
   } else {
@@ -75,13 +99,106 @@ function confirmLink() {
   onInput()
 }
 
-const pasteAsPlainText = ref(false)
+const pasteAsPlainText = ref(true)
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function textToDefaultHtml(text: string): string {
+  return escapeHtml(text).replace(/\r\n|\r|\n/g, '<br>')
+}
+
+function sanitizeHref(href: string): string {
+  const value = href.trim()
+  if (/^(https?:|mailto:|tel:)/i.test(value)) return value
+  return ''
+}
+
+function sanitizePastedNode(node: Node): string {
+  if (node.nodeType === Node.TEXT_NODE) {
+    return escapeHtml(node.textContent ?? '')
+  }
+
+  if (!(node instanceof HTMLElement)) {
+    return Array.from(node.childNodes).map(sanitizePastedNode).join('')
+  }
+
+  const children = Array.from(node.childNodes).map(sanitizePastedNode).join('')
+  const tag = node.tagName.toLowerCase()
+
+  switch (tag) {
+    case 'br':
+      return '<br>'
+    case 'p':
+    case 'div':
+    case 'section':
+    case 'article':
+    case 'h1':
+    case 'h2':
+    case 'h3':
+    case 'h4':
+    case 'h5':
+    case 'h6':
+      return children.trim() ? `<p>${children}</p>` : ''
+    case 'ul':
+    case 'ol':
+      return children.trim() ? `<${tag}>${children}</${tag}>` : ''
+    case 'li':
+      return `<li>${children || '<br>'}</li>`
+    case 'strong':
+    case 'b':
+      return children ? `<strong>${children}</strong>` : ''
+    case 'em':
+    case 'i':
+      return children ? `<em>${children}</em>` : ''
+    case 'u':
+      return children ? `<u>${children}</u>` : ''
+    case 'a': {
+      const href = sanitizeHref(node.getAttribute('href') ?? '')
+      if (!children) return ''
+      return href ? `<a href="${escapeHtml(href)}" target="_blank" rel="noopener">${children}</a>` : children
+    }
+    default:
+      return children
+  }
+}
+
+function sanitizePastedHtml(html: string, fallbackText: string): string {
+  const template = document.createElement('template')
+  template.innerHTML = html
+  const sanitized = Array.from(template.content.childNodes).map(sanitizePastedNode).join('').trim()
+  return sanitized || textToDefaultHtml(fallbackText)
+}
+
+function sanitizeEditorHtml(html: string): string {
+  const normalized = html.trim()
+  if (!normalized || normalized === '<br>' || normalized === '<div><br></div>') return ''
+
+  const template = document.createElement('template')
+  template.innerHTML = normalized
+  return Array.from(template.content.childNodes).map(sanitizePastedNode).join('').trim()
+}
 
 function handlePaste(e: ClipboardEvent) {
-  if (!pasteAsPlainText.value) return
   e.preventDefault()
+  restoreSelection()
+  pushUndoState()
   const text = e.clipboardData?.getData('text/plain') ?? ''
-  document.execCommand('insertText', false, text)
+  const html = e.clipboardData?.getData('text/html') ?? ''
+  const normalized = pasteAsPlainText.value || !html
+    ? textToDefaultHtml(text)
+    : sanitizePastedHtml(html, text)
+
+  document.execCommand('insertHTML', false, normalized)
+  editorRef.value?.focus()
+  saveSelection()
+  onInput()
 }
 
 function handleKeydown(e: KeyboardEvent) {
@@ -98,99 +215,50 @@ function handleKeydown(e: KeyboardEvent) {
 
 watch(() => props.modelValue, (val) => {
   if (!editorRef.value || isFocused.value) return
-  if (editorRef.value.innerHTML !== val) {
-    editorRef.value.innerHTML = val || ''
+  const clean = sanitizeEditorHtml(val || '')
+  if (editorRef.value.innerHTML !== clean) {
+    editorRef.value.innerHTML = clean
   }
-  showPlaceholder.value = !val
+  showPlaceholder.value = !clean
+  if (clean !== (val || '').trim()) {
+    emit('update:modelValue', clean)
+  }
 })
 
 onMounted(() => {
   if (editorRef.value) {
-    editorRef.value.innerHTML = props.modelValue || ''
-    showPlaceholder.value = !props.modelValue
+    const clean = sanitizeEditorHtml(props.modelValue || '')
+    editorRef.value.innerHTML = clean
+    showPlaceholder.value = !clean
+    if (clean !== (props.modelValue || '').trim()) {
+      emit('update:modelValue', clean)
+    }
     pushUndoState()
   }
 })
 
 function onInput() {
-  const html = editorRef.value?.innerHTML ?? ''
-  const clean = html === '<br>' || html === '<div><br></div>' ? '' : html
+  const clean = sanitizeEditorHtml(editorRef.value?.innerHTML ?? '')
   showPlaceholder.value = !clean
+  saveSelection()
   pushUndoState()
   emit('update:modelValue', clean)
 }
 
 function execCmd(cmd: string, value?: string) {
+  restoreSelection()
   pushUndoState()
   document.execCommand(cmd, false, value)
   editorRef.value?.focus()
+  saveSelection()
   onInput()
-}
-
-function setFontSize(e: Event) {
-  const size = (e.target as HTMLSelectElement).value
-  pushUndoState()
-  document.execCommand('fontSize', false, '7')
-  const fontEls = editorRef.value?.querySelectorAll('font[size="7"]')
-  fontEls?.forEach(el => {
-    const span = document.createElement('span')
-    span.style.fontSize = size
-    span.innerHTML = el.innerHTML
-    el.parentNode?.replaceChild(span, el)
-  })
-  applyFontSizeToSelectedListItems(size)
-  editorRef.value?.focus()
-  onInput()
-}
-
-function applyFontSizeToSelectedListItems(size: string) {
-  const selection = window.getSelection()
-  if (!selection || selection.rangeCount === 0) return
-
-  const range = selection.getRangeAt(0)
-  const startEl =
-    range.startContainer.nodeType === Node.ELEMENT_NODE
-      ? (range.startContainer as Element)
-      : range.startContainer.parentElement
-  const endEl =
-    range.endContainer.nodeType === Node.ELEMENT_NODE
-      ? (range.endContainer as Element)
-      : range.endContainer.parentElement
-
-  const startLi = startEl?.closest('li') as HTMLElement | null
-  const endLi = endEl?.closest('li') as HTMLElement | null
-
-  if (startLi && endLi && startLi.parentElement && startLi.parentElement === endLi.parentElement) {
-    const siblings = Array.from(startLi.parentElement.children).filter(
-      (node) => node instanceof HTMLElement && node.tagName === 'LI',
-    ) as HTMLElement[]
-    const startIndex = siblings.indexOf(startLi)
-    const endIndex = siblings.indexOf(endLi)
-    if (startIndex > -1 && endIndex > -1) {
-      const from = Math.min(startIndex, endIndex)
-      const to = Math.max(startIndex, endIndex)
-      for (let i = from; i <= to; i += 1) {
-        const li = siblings[i]
-        if (li) li.style.fontSize = size
-      }
-      return
-    }
-  }
-
-  if (startLi) startLi.style.fontSize = size
-  if (endLi && endLi !== startLi) endLi.style.fontSize = size
-}
-
-function setColor(e: Event) {
-  const color = (e.target as HTMLInputElement).value
-  execCmd('foreColor', color)
 }
 
 function isActive(cmd: string): boolean {
   try { return document.queryCommandState(cmd) } catch { return false }
 }
 
-const canUndo = () => undoStack.value.length > 0
+const canUndo = () => undoStack.value.length > 1
 const canRedo = () => redoStack.value.length > 0
 </script>
 
@@ -213,19 +281,6 @@ const canRedo = () => redoStack.value.length > 0
       <button type="button" class="tool-btn" :disabled="!canRedo()" @mousedown.prevent="handleRedo" title="重做 (Ctrl+Y)">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M21 10H11a5 5 0 0 0 0 10h4M21 10l-4-4M21 10l-4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
-      <div class="tool-divider"></div>
-      <select class="tool-select" @change="setFontSize" title="字体大小">
-        <option value="">字号</option>
-        <option value="10px">10</option>
-        <option value="11px">11</option>
-        <option value="12px">12</option>
-        <option value="13px">13</option>
-        <option value="14px">14</option>
-        <option value="16px">16</option>
-        <option value="18px">18</option>
-        <option value="20px">20</option>
-      </select>
-      <input type="color" class="tool-color" @change="setColor" title="字体颜色" value="#333333" />
       <div class="tool-divider"></div>
       <button type="button" class="tool-btn" @mousedown.prevent="openLinkDialog" title="插入链接">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -257,7 +312,7 @@ const canRedo = () => redoStack.value.length > 0
         class="tool-btn"
         :class="{ active: pasteAsPlainText }"
         @mousedown.prevent="pasteAsPlainText = !pasteAsPlainText"
-        title="粘贴为纯文本"
+        :title="pasteAsPlainText ? '粘贴时统一为默认样式' : '粘贴时保留基础结构并清除外部样式'"
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><rect x="8" y="2" width="8" height="4" rx="1" stroke="currentColor" stroke-width="1.8"/></svg>
       </button>
@@ -270,9 +325,11 @@ const canRedo = () => redoStack.value.length > 0
         contenteditable="true"
         :style="{ minHeight: (rows || 3) * 1.9 + 'em' }"
         @input="onInput"
-        @focus="isFocused = true"
+        @focus="isFocused = true; saveSelection()"
         @blur="isFocused = false"
         @keydown="handleKeydown"
+        @keyup="saveSelection"
+        @mouseup="saveSelection"
         @paste="handlePaste"
         spellcheck="false"
       ></div>
@@ -323,14 +380,14 @@ const canRedo = () => redoStack.value.length > 0
   border-radius: calc(var(--radius-lg) + 2px);
   background: var(--bg-card);
   overflow: hidden;
-  box-shadow: var(--shadow-sm);
-  transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
+  box-shadow: none;
+  transition: border-color 0.18s ease, background-color 0.18s ease;
 }
 
 .rich-editor-wrap.focused {
   border-color: var(--border-accent);
   background: var(--bg-card);
-  box-shadow: var(--shadow-md);
+  box-shadow: none;
 }
 
 .rich-toolbar {
@@ -381,29 +438,6 @@ const canRedo = () => redoStack.value.length > 0
   height: 18px;
   background: var(--border-color);
   margin: 0 2px;
-}
-
-.tool-select,
-.tool-color {
-  height: 32px;
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  background: var(--bg-card);
-}
-
-.tool-select {
-  min-width: 72px;
-  padding: 0 10px;
-  font-size: 12px;
-  color: var(--text-primary);
-  cursor: pointer;
-  outline: none;
-}
-
-.tool-color {
-  width: 34px;
-  padding: 3px;
-  cursor: pointer;
 }
 
 .editor-area-wrap {
@@ -477,7 +511,6 @@ const canRedo = () => redoStack.value.length > 0
   position: fixed;
   inset: 0;
   background: var(--bg-overlay);
-  backdrop-filter: blur(4px);
   z-index: 200;
   display: flex;
   align-items: center;
@@ -490,7 +523,7 @@ const canRedo = () => redoStack.value.length > 0
   border: 1px solid var(--border-color-strong);
   border-radius: 18px;
   padding: 22px;
-  box-shadow: var(--shadow-xl);
+  box-shadow: none;
 }
 
 .link-dialog-title {
@@ -521,12 +554,12 @@ const canRedo = () => redoStack.value.length > 0
   color: var(--text-primary);
   background: var(--bg-input);
   outline: none;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+  transition: border-color 0.18s ease;
 }
 
 .link-input:focus {
   border-color: rgba(43, 123, 184, 0.36);
-  box-shadow: var(--focus-ring);
+  box-shadow: none;
 }
 
 .link-actions {
@@ -545,7 +578,7 @@ const canRedo = () => redoStack.value.length > 0
   font-weight: 700;
   cursor: pointer;
   border: 1px solid var(--border-color);
-  transition: transform 0.18s ease, border-color 0.18s ease, background-color 0.18s ease;
+  transition: border-color 0.18s ease, background-color 0.18s ease;
 }
 
 .link-cancel {
@@ -554,7 +587,7 @@ const canRedo = () => redoStack.value.length > 0
 }
 
 .link-cancel:hover {
-  transform: translateY(-1px);
+  border-color: var(--border-color-strong);
 }
 
 .link-confirm {
@@ -564,7 +597,6 @@ const canRedo = () => redoStack.value.length > 0
 }
 
 .link-confirm:hover:not(:disabled) {
-  transform: translateY(-1px);
   background: var(--accent-blue-600);
 }
 

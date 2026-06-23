@@ -438,7 +438,7 @@ onMounted(() => {
                 <!-- 此后即便是放大至一万倍，这标志都将毫无锯齿、如金石般清凌刚正！ -->
                 <g transform="translate(340, 278)">
                     <!-- 白色圆角质感盾壳 -->
-                    <rect x="0" y="0" width="126" height="126" rx="32" fill="#ffffff" filter="drop-shadow(0px 8px 16px rgba(0, 242, 255, 0.2))" />
+                    <rect x="0" y="0" width="126" height="126" rx="32" fill="#ffffff" />
                     <!-- PW 本体核心，深海科技蓝 -->
                     <text x="63" y="85" font-family="'Inter', Arial, sans-serif" font-weight="900" font-size="64" text-anchor="middle" fill="#0a192f" letter-spacing="-3">PW</text>
                     <!-- 原标志里的核心科技青色光亮原石（在核心 W 字符左近镶嵌的点睛之笔） -->
@@ -517,7 +517,7 @@ svg {
 }
 
 @keyframes pulse-anim {
-    0% { filter: drop-shadow(0 0 2px #00F2FF); opacity: 0.7; }
-    100% { filter: drop-shadow(0 0 10px #00F2FF); opacity: 1; }
+    0% { opacity: 0.7; }
+    100% { opacity: 1; }
 }
 </style>

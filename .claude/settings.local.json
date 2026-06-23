@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "mcp__zread__get_repo_structure",
+      "mcp__zread__read_file"
     ]
   }
 }

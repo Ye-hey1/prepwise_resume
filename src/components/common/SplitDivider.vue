@@ -95,13 +95,13 @@ function onDoubleClick() {
 
 <style scoped>
 .split-divider {
-  width: 14px;
-  flex: 0 0 14px;
+  width: 10px;
+  flex: 0 0 10px;
   cursor: col-resize;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(180deg, transparent, rgba(91, 111, 132, 0.05), transparent);
+  background: transparent;
   position: relative;
   z-index: 5;
   transition: background 0.18s ease;
@@ -113,28 +113,28 @@ function onDoubleClick() {
   top: 18px;
   bottom: 18px;
   width: 1px;
-  background: linear-gradient(180deg, transparent, var(--border-color-strong), transparent);
+  background: var(--border-color);
 }
 
 .split-divider:hover,
 .split-divider.dragging {
-  background: linear-gradient(180deg, transparent, rgba(74, 99, 126, 0.08), transparent);
+  background: rgba(43, 123, 184, 0.04);
 }
 
 .split-handle {
   width: 6px;
   height: 56px;
   border-radius: 999px;
-  background: linear-gradient(180deg, var(--gray-300), var(--gray-400));
-  box-shadow: 0 0 0 3px var(--glass-low);
-  transition: background 0.18s ease, height 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+  background: var(--gray-300);
+  box-shadow: none;
+  transition: background 0.18s ease, height 0.18s ease;
 }
 
 .split-divider:hover .split-handle,
 .split-divider.dragging .split-handle {
-  background: linear-gradient(180deg, var(--accent-blue-400), var(--accent-blue-600));
+  background: var(--accent-blue-500);
   height: 88px;
-  box-shadow: 0 0 0 4px rgba(232, 238, 248, 0.92);
-  transform: scaleX(1.05);
+  box-shadow: none;
+  transform: none;
 }
 </style>

@@ -1,16 +1,42 @@
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { useResumeStore } from '@/stores/resume'
+import { loadFont } from '@/utils/fontLoader'
 
 export function useTemplateCustomization() {
   const store = useResumeStore()
+  const currentCustomization = computed(() => store.getCustomization(store.selectedTemplateKey))
+
+  watch(
+    () => currentCustomization.value.fontFamily,
+    (fontFamily) => {
+      if (fontFamily) loadFont(fontFamily)
+    },
+    { immediate: true }
+  )
 
   const cssVars = computed(() => {
-    const custom = store.getCustomization(store.selectedTemplateKey)
+    const custom = currentCustomization.value
     const vars: Record<string, string> = {}
+    const fontSize = custom.fontSize ?? 14
+    const metaSize = Math.max(10, fontSize - 1)
+    const smallSize = Math.max(9, fontSize - 2)
+    const tagSize = Math.max(9, fontSize - 3)
+    const entryTitleSize = fontSize + 2
+    const sectionTitleSize = fontSize + 4
+    const nameSize = Math.min(40, Math.max(24, Math.round(fontSize * 2.1)))
+
+    vars['--tpl-font-size'] = `${fontSize}px`
+    vars['--tpl-body-size'] = `${fontSize}px`
+    vars['--tpl-meta-size'] = `${metaSize}px`
+    vars['--tpl-small-size'] = `${smallSize}px`
+    vars['--tpl-tag-size'] = `${tagSize}px`
+    vars['--tpl-entry-title-size'] = `${entryTitleSize}px`
+    vars['--tpl-section-title-size'] = `${sectionTitleSize}px`
+    vars['--tpl-name-size'] = `${nameSize}px`
+
     if (custom.primaryColor) vars['--tpl-primary'] = custom.primaryColor
     if (custom.accentColor) vars['--tpl-accent'] = custom.accentColor
     if (custom.fontFamily) vars['--tpl-font'] = custom.fontFamily
-    if (custom.fontSize) vars['--tpl-font-size'] = `${custom.fontSize}px`
     if (custom.sectionSpacing) vars['--tpl-section-gap'] = `${custom.sectionSpacing}px`
     if (custom.pagePaddingX !== undefined) vars['--tpl-page-padding-x'] = `${custom.pagePaddingX}px`
     if (custom.pagePaddingY !== undefined) vars['--tpl-page-padding-y'] = `${custom.pagePaddingY}px`

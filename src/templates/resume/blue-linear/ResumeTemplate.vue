@@ -3,7 +3,7 @@ import { iconPaths, iconViewBox, isFilledIcon } from '../../shared/metaIcons'
 import { useResumeTemplateData } from '../../shared/useResumeTemplateData'
 import { useTemplateCustomization } from '../../shared/useTemplateCustomization'
 
-const { store, hasAnyContent, lineOneMeta, lineTwoMeta, lineThreeMeta, moduleOrderStyle } = useResumeTemplateData()
+const { store, hasAnyContent, lineOneMeta, lineTwoMeta, lineThreeMeta, moduleOrderStyle, educationTitleParts, educationTags, workTitleParts, workSideParts, linkHref, dateText, dateRangeText } = useResumeTemplateData()
 const { cssVars } = useTemplateCustomization()
 </script>
 
@@ -11,9 +11,9 @@ const { cssVars } = useTemplateCustomization()
   <div class="resume-template-blue-linear" :style="cssVars">
     <header v-if="store.isModuleVisible('basicInfo')" class="resume-header">
       <div class="header-main">
-        <h1 class="name">{{ store.basicInfo.name || '蓝色线性模板' }}</h1>
+        <h1 class="name">{{ store.basicInfo.name || '姓名' }}</h1>
 
-        <div class="contact-line">
+        <div v-if="lineOneMeta.length" class="contact-line">
           <span v-for="item in lineOneMeta" :key="item.key" class="meta-item">
             <svg
               class="meta-icon-svg"
@@ -27,7 +27,7 @@ const { cssVars } = useTemplateCustomization()
           </span>
         </div>
 
-        <div class="contact-line">
+        <div v-if="lineTwoMeta.length" class="contact-line">
           <span v-for="item in lineTwoMeta" :key="item.key" class="meta-item">
             <svg
               class="meta-icon-svg"
@@ -69,29 +69,25 @@ const { cssVars } = useTemplateCustomization()
     >
       <h2 class="section-title">教育经历</h2>
       <article v-for="edu in store.educationList" :key="edu.id" class="entry" v-show="edu.school">
-        <div class="entry-head">
-          <p class="entry-main">
+        <div class="entry-head entry-head-education">
+          <p class="entry-main entry-school-line">
             <strong>{{ edu.school }}</strong>
-            <span v-if="edu.major || edu.degree" class="entry-inline-parts">
-              <span v-if="edu.major">{{ edu.major }}</span>
-              <span v-if="edu.major && edu.degree" class="dot-sep">·</span>
-              <span v-if="edu.degree">{{ edu.degree }}</span>
+            <span v-if="educationTags(edu).length" class="entry-tags">
+              <span v-for="tag in educationTags(edu)" :key="`${edu.id}-edu-tag-${tag}`" class="entry-tag">{{ tag }}</span>
             </span>
           </p>
-          <span class="entry-date">{{ edu.startDate }} ~ {{ edu.endDate || '至今' }}</span>
+          <span v-if="educationTitleParts(edu).length" class="entry-inline-parts entry-education-parts">
+            <span v-for="(part, partIdx) in educationTitleParts(edu)" :key="`${edu.id}-edu-title-${partIdx}`">{{ part }}</span>
+          </span>
+          <span class="entry-date">{{ dateRangeText(edu.startDate, edu.endDate) }}</span>
         </div>
-        <p class="entry-meta entry-meta-row">
-          <span v-if="edu.type">{{ edu.type }}</span>
-          <span v-if="edu.college">{{ edu.college }}</span>
-          <span v-if="edu.location">{{ edu.location }}</span>
-        </p>
-        <div v-if="edu.description" class="entry-rich" v-html="edu.description"></div>
+        <div v-if="edu.description" class="entry-rich" v-safe-html="edu.description"></div>
       </article>
     </section>
 
     <section v-if="store.isModuleVisible('skills') && store.skills" class="resume-section" :style="moduleOrderStyle('skills')">
       <h2 class="section-title">专业技能</h2>
-      <div class="entry-rich" v-html="store.skills"></div>
+      <div class="entry-rich" v-safe-html="store.skills"></div>
     </section>
 
     <section
@@ -104,15 +100,15 @@ const { cssVars } = useTemplateCustomization()
         <div class="entry-head">
           <p class="entry-main entry-main-wrap">
             <strong>{{ work.company }}</strong>
-            <span v-if="work.department">{{ work.department }}</span>
-            <span v-if="work.department && work.position" class="dot-sep">·</span>
-            <span v-if="work.position">{{ work.position }}</span>
-            <span v-if="(work.department || work.position) && work.location" class="dot-sep">·</span>
-            <span v-if="work.location">{{ work.location }}</span>
+            <span v-if="workTitleParts(work).length" class="entry-work-parts">
+              <span v-for="(part, partIdx) in workTitleParts(work)" :key="`${work.id}-work-title-${partIdx}`">{{ part }}</span>
+            </span>
           </p>
-          <span class="entry-date">{{ work.startDate }} ~ {{ work.endDate || '至今' }}</span>
+          <span class="entry-side-line">
+            <span v-for="(part, partIdx) in workSideParts(work)" :key="`${work.id}-work-side-${partIdx}`">{{ part }}</span>
+          </span>
         </div>
-        <div v-if="work.description" class="entry-rich" v-html="work.description"></div>
+        <div v-if="work.description" class="entry-rich" v-safe-html="work.description"></div>
       </article>
     </section>
 
@@ -123,23 +119,23 @@ const { cssVars } = useTemplateCustomization()
     >
       <h2 class="section-title">项目经历</h2>
       <article v-for="project in store.projectList" :key="project.id" class="entry" v-show="project.name">
-        <div class="entry-head">
-          <p class="entry-main">
+        <div class="entry-head entry-head-project">
+          <p class="entry-main entry-project-name">
             <strong>{{ project.name }}</strong>
-            <span v-if="project.role">{{ project.role }}</span>
           </p>
-          <span class="entry-date">{{ project.startDate }} ~ {{ project.endDate || '至今' }}</span>
+          <span v-if="project.role" class="entry-inline-parts entry-project-role">{{ project.role }}</span>
+          <span class="entry-date">{{ dateRangeText(project.startDate, project.endDate) }}</span>
         </div>
         <p v-if="project.link" class="entry-link-row">
-          <a class="entry-link" :href="project.link" target="_blank" rel="noopener noreferrer">项目链接：{{ project.link }}</a>
+          <a class="entry-link" :href="linkHref(project.link)" target="_blank" rel="noopener noreferrer">项目链接：{{ project.link }}</a>
         </p>
         <div v-if="project.introduction">
           <p v-if="store.showProjectSubtitles" class="project-block-title">项目介绍</p>
-          <div class="entry-rich" v-html="project.introduction"></div>
+          <div class="entry-rich" v-safe-html="project.introduction"></div>
         </div>
         <div v-if="project.mainWork">
           <p v-if="store.showProjectSubtitles" class="project-block-title">主要工作</p>
-          <div class="entry-rich" v-html="project.mainWork"></div>
+          <div class="entry-rich" v-safe-html="project.mainWork"></div>
         </div>
       </article>
     </section>
@@ -153,9 +149,9 @@ const { cssVars } = useTemplateCustomization()
       <article v-for="award in store.awardList" :key="award.id" class="entry" v-show="award.name">
         <div class="entry-head">
           <p class="entry-main"><strong>{{ award.name }}</strong></p>
-          <span class="entry-date">{{ award.date }}</span>
+          <span class="entry-date">{{ dateText(award.date) }}</span>
         </div>
-        <div v-if="award.description" class="entry-rich" v-html="award.description"></div>
+        <div v-if="award.description" class="entry-rich" v-safe-html="award.description"></div>
       </article>
     </section>
 
@@ -165,7 +161,7 @@ const { cssVars } = useTemplateCustomization()
       :style="moduleOrderStyle('selfIntro')"
     >
       <h2 class="section-title section-title-self-intro">个人简介</h2>
-      <div class="entry-rich" v-html="store.selfIntro"></div>
+      <div class="entry-rich" v-safe-html="store.selfIntro"></div>
     </section>
 
     <div v-if="!hasAnyContent" class="empty">
@@ -331,6 +327,14 @@ const { cssVars } = useTemplateCustomization()
   gap: 16px;
 }
 
+.entry-head-education,
+.entry-head-project {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 16px;
+}
+
 .entry-main {
   display: flex;
   align-items: baseline;
@@ -341,7 +345,7 @@ const { cssVars } = useTemplateCustomization()
 
 .entry-main-wrap {
   flex-wrap: wrap;
-  gap: 4px;
+  column-gap: 16px;
   row-gap: 4px;
 }
 
@@ -355,34 +359,89 @@ const { cssVars } = useTemplateCustomization()
   color: #7b8798;
 }
 
+.entry-school-line {
+  grid-column: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+.entry-project-name {
+  grid-column: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.entry-education-parts {
+  grid-column: 2;
+  justify-self: center;
+  text-align: center;
+}
+
+.entry-project-role {
+  grid-column: 2;
+  justify-self: center;
+  text-align: center;
+}
+
 .entry-inline-parts {
   display: inline-flex;
   align-items: baseline;
-  gap: 3px;
+  flex-wrap: wrap;
+  column-gap: 16px;
+  row-gap: 2px;
 }
 
-.dot-sep {
-  color: #7b8798;
-  margin: 0 1px;
+.entry-work-parts {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  column-gap: 18px;
+  row-gap: 2px;
+}
+
+.entry-tags {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.entry-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 0 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(75, 137, 220, 0.22);
+  background: rgba(75, 137, 220, 0.08);
+  color: var(--tpl-primary, #4b89dc);
+  font-size: 11px !important;
+  line-height: 1;
+  font-weight: 700;
 }
 
 .entry-date {
+  grid-column: 3;
   color: #7b8798;
   font-size: 14px;
   white-space: nowrap;
+  justify-self: end;
 }
 
-.entry-meta {
-  margin-top: 1px;
+.entry-side-line {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  column-gap: 12px;
+  row-gap: 2px;
   color: #7b8798;
   font-size: 14px;
-}
-
-.entry-meta-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
+  white-space: nowrap;
 }
 
 .project-block-title {
@@ -483,5 +542,19 @@ const { cssVars } = useTemplateCustomization()
 
 :deep(.entry-rich p) {
   margin: 2px 0;
+}
+
+:deep(.entry-rich a) {
+  color: var(--tpl-primary, #4b89dc);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+:deep(.entry-rich a:hover) {
+  text-decoration: underline;
+}
+
+:deep(.entry-rich span[style*='font-size']) {
+  line-height: inherit;
 }
 </style>

@@ -1239,7 +1239,7 @@ onUnmounted(() => {
   transform: scale(0.95);
 }
 
-.orb-icon { filter: drop-shadow(0 2px 4px rgba(0,0,0,0.15)); }
+.orb-icon { filter: none; }
 
 .empty-title {
   position: relative;

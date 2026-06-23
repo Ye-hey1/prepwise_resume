@@ -7,6 +7,7 @@ import SplashScreen from '@/components/common/SplashScreen.vue'
 import ToastContainer from '@/components/common/ToastContainer.vue'
 
 const sidebarCollapsed = ref(false)
+const mobileMenuOpen = ref(false)
 const showSplash = ref(!localStorage.getItem('prepwise-splash-shown'))
 const route = useRoute()
 
@@ -19,23 +20,54 @@ const handleSplashFinish = () => {
   showSplash.value = false
   localStorage.setItem('prepwise-splash-shown', 'true')
 }
+
+function closeMobileMenu() {
+  mobileMenuOpen.value = false
+}
 </script>
 
 <template>
   <SplashScreen v-if="showSplash" @finish="handleSplashFinish" />
 
   <div class="app-layout">
+    <!-- Mobile hamburger -->
+    <button
+      class="mobile-menu-btn"
+      :class="{ 'mobile-menu-btn--open': mobileMenuOpen }"
+      type="button"
+      aria-label="打开导航菜单"
+      @click="mobileMenuOpen = !mobileMenuOpen"
+    >
+      <span class="mobile-menu-icon" />
+    </button>
+
+    <!-- Mobile sidebar backdrop -->
+    <transition name="fade">
+      <div
+        v-if="mobileMenuOpen"
+        class="mobile-overlay"
+        @click="closeMobileMenu"
+      />
+    </transition>
+
+    <!-- Sidebar: desktop inline, mobile drawer -->
     <ModuleSidebar
       :collapsed="sidebarCollapsed"
+      :class="{ 'sidebar--mobile-open': mobileMenuOpen }"
+      class="sidebar-shell"
       @toggle-collapse="sidebarCollapsed = !sidebarCollapsed"
+      @navigate="closeMobileMenu"
     />
+
     <div class="main-shell" :class="{ 'main-shell--interview': isInterviewRoute }">
       <div class="main-shell-backdrop" :class="{ 'main-shell-backdrop--interview': isInterviewRoute }"></div>
       <main class="main-content" :class="{ 'main-content--interview': isInterviewRoute }">
-        <RouterView v-slot="{ Component }">
-          <keep-alive :include="keepAliveInclude" :max="3">
-            <component :is="Component" />
-          </keep-alive>
+        <RouterView v-slot="{ Component, route }">
+          <transition name="page" mode="out-in">
+            <keep-alive :include="keepAliveInclude" :max="3">
+              <component :is="Component" :key="route.path" />
+            </keep-alive>
+          </transition>
         </RouterView>
       </main>
     </div>
@@ -47,30 +79,21 @@ const handleSplashFinish = () => {
 <style scoped>
 .app-layout {
   display: flex;
-  height: 100vh;
+  height: 100dvh;
   overflow: hidden;
-  background:
-    radial-gradient(circle at top left, rgba(174, 123, 91, 0.14), transparent 30%),
-    radial-gradient(circle at bottom right, rgba(44, 74, 107, 0.12), transparent 34%),
-    var(--bg-app);
+  background: var(--bg-app);
 }
 
 .main-shell {
   position: relative;
   flex: 1;
   min-width: 0;
-  padding: 16px;
+  padding: 0;
   overflow: hidden;
 }
 
 .main-shell-backdrop {
-  position: absolute;
-  inset: 16px;
-  border-radius: 28px;
-  background: linear-gradient(180deg, var(--glass-minimal), var(--glass-minimal));
-  border: 1px solid var(--glass-minimal);
-  box-shadow: var(--shadow-xl);
-  pointer-events: none;
+  display: none;
 }
 
 .main-content {
@@ -80,28 +103,99 @@ const handleSplashFinish = () => {
   display: flex;
   overflow: hidden;
   min-width: 0;
-  border-radius: 24px;
+  border-radius: 0;
   background: var(--bg-shell);
-  border: 1px solid var(--border-color-strong);
-  box-shadow: var(--shadow-lg);
+  border: 0;
+  box-shadow: none;
 }
 
 .main-shell--interview {
-  padding: 6px;
+  padding: 0;
 }
 
 .main-shell-backdrop--interview {
-  inset: 6px;
-  border-radius: 24px;
+  inset: 0.375rem;
+  border-radius: 1rem;
 }
 
 .main-content--interview {
-  border-radius: 22px;
+  border-radius: 0;
 }
 
+/* ── Mobile menu button (hidden on desktop) ── */
+.mobile-menu-btn {
+  display: none;
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 12px);
+  left: calc(env(safe-area-inset-left, 0px) + 12px);
+  z-index: var(--z-overlay, 100);
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: none;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.mobile-menu-btn:hover {
+  background: var(--bg-hover);
+}
+
+.mobile-menu-icon,
+.mobile-menu-icon::before,
+.mobile-menu-icon::after {
+  display: block;
+  width: 18px;
+  height: 2px;
+  background: var(--text-primary);
+  border-radius: 1px;
+  transition: transform 0.25s ease, opacity 0.2s ease;
+}
+
+.mobile-menu-icon {
+  position: relative;
+}
+
+.mobile-menu-icon::before,
+.mobile-menu-icon::after {
+  content: '';
+  position: absolute;
+  left: 0;
+}
+
+.mobile-menu-icon::before { top: -6px; }
+.mobile-menu-icon::after  { top: 6px; }
+
+.mobile-menu-btn--open .mobile-menu-icon {
+  background: transparent;
+}
+
+.mobile-menu-btn--open .mobile-menu-icon::before {
+  top: 0;
+  transform: rotate(45deg);
+}
+
+.mobile-menu-btn--open .mobile-menu-icon::after {
+  top: 0;
+  transform: rotate(-45deg);
+}
+
+/* ── Mobile overlay ── */
+.mobile-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-sidebar, 10) - 1);
+  background: var(--bg-overlay);
+}
+
+/* ── Desktop-only transitions ── */
 .fade-enter-active,
 .fade-leave-active {
-  transition: opacity 0.8s ease;
+  transition: opacity var(--duration-slow) var(--ease-standard);
 }
 
 .fade-enter-from,
@@ -109,27 +203,97 @@ const handleSplashFinish = () => {
   opacity: 0;
 }
 
-@media (max-width: 1200px) {
+/* ══════════════════════════════════════
+   Breakpoint: Tablet & below (≤1024px)
+   ══════════════════════════════════════ */
+@media (max-width: 1024px) {
+  .mobile-menu-btn {
+    display: flex;
+  }
+
+  .sidebar-shell {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: var(--z-sidebar, 10);
+    transform: translateX(-100%);
+    transition: transform var(--duration-moderate) var(--ease-out-quart);
+    box-shadow: none;
+  }
+
+  .sidebar-shell.sidebar--mobile-open {
+    transform: translateX(0);
+    box-shadow: none;
+  }
+
+  .main-shell {
+    padding: 0;
+  }
+
+  .main-shell-backdrop {
+    inset: 0.5rem;
+    border-radius: 0.75rem;
+  }
+
+  .main-content {
+    border-radius: 0;
+  }
+
   .main-shell--interview {
-    padding: 4px;
+    padding: 0;
   }
 
   .main-shell-backdrop--interview {
-    inset: 4px;
-    border-radius: 20px;
+    inset: 0.25rem;
+    border-radius: 0.5rem;
   }
 
   .main-content--interview {
-    border-radius: 18px;
+    border-radius: 0;
   }
 }
 
-/* 暗色模式适配 */
+/* ══════════════════════════════════════
+   Breakpoint: Desktop wide (≤1200px)
+   ══════════════════════════════════════ */
+@media (min-width: 1025px) and (max-width: 1200px) {
+  .main-shell--interview {
+    padding: 0;
+  }
+
+  .main-shell-backdrop--interview {
+    inset: 0.25rem;
+    border-radius: 0.875rem;
+  }
+
+  .main-content--interview {
+    border-radius: 0;
+  }
+}
+
+/* ══════════════════════════════════════
+   Breakpoint: Phone (≤640px)
+   ══════════════════════════════════════ */
+@media (max-width: 640px) {
+  .main-shell {
+    padding: 0;
+  }
+
+  .main-shell-backdrop {
+    display: none;
+  }
+
+  .main-content {
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+  }
+}
+
+/* ── 暗色模式适配 ── */
 :root[data-theme="dark"] .app-layout {
-  background:
-    radial-gradient(circle at top left, rgba(77, 141, 191, 0.06), transparent 30%),
-    radial-gradient(circle at bottom right, rgba(62, 201, 138, 0.04), transparent 34%),
-    var(--bg-app);
+  background: var(--bg-app);
 }
 
 :root[data-theme="dark"] .main-shell-backdrop {
@@ -141,6 +305,11 @@ const handleSplashFinish = () => {
 :root[data-theme="dark"] .main-content {
   background: var(--bg-shell);
   border-color: var(--border-color-strong);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  box-shadow: none;
+}
+
+:root[data-theme="dark"] .mobile-menu-btn {
+  background: var(--bg-elevated);
+  border-color: var(--border-color-strong);
 }
 </style>

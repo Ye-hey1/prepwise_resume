@@ -101,6 +101,8 @@ const isImmersive = computed(() =>
   session.isSimulationPhase.value,
 )
 
+const simulationMode = computed<'candidate' | 'interviewer'>(() => session.mode.value as 'candidate' | 'interviewer')
+
 const coachingStageLabel = computed(() => {
   if (session.mode.value !== 'coaching') return ''
   const selectedStage = session.prepConfig.value.coachingStage || 'full'
@@ -457,7 +459,7 @@ function handleGoToJdAnalysis() {
 
 function handleRequestHint() {
   void hint.requestHint({
-    mode: session.mode.value,
+    mode: session.mode.value as 'candidate' | 'interviewer',
     history: session.messages.value.map((item) => ({ role: item.role, content: item.content })),
     resumeSnapshot: session.resumeSnapshot.value,
     durationMinutes: timer.durationMinutes.value,
@@ -1097,7 +1099,7 @@ onUnmounted(() => {
         <InterviewSimulationPanel
           v-else
           :embedded="true"
-          :mode="session.mode.value"
+          :mode="simulationMode"
           :interviewer-model-id="session.prepConfig.value.interviewerModelId"
           :candidate-model-id="session.prepConfig.value.candidateModelId"
           :messages="session.messages.value"

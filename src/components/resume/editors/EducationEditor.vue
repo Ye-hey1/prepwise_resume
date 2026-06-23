@@ -6,19 +6,22 @@ import { validateDateRange } from '@/utils/dateValidation'
 
 const store = useResumeStore()
 const collapsed = ref(false)
+const educationTagOptions = ['985', '211', '双一流', '职业培训', '海外院校', '重点本科']
 
-const dateErrors = reactive<Record<number, string>>({})
+const dateErrors = reactive<Record<string, string>>({})
 
-function validateEntryDates(index: number, start: string, end: string) {
+function validateEntryDates(id: string, start: string, end: string) {
   const result = validateDateRange(start, end)
   if (result.valid) {
-    delete dateErrors[index]
+    delete dateErrors[id]
   } else {
-    dateErrors[index] = result.message ?? '日期格式有误'
+    dateErrors[id] = result.message ?? '日期格式有误'
   }
 }
 
 function buildEducationAiContext(edu: (typeof store.educationList)[number]) {
+  const tags = Array.isArray(edu.tags) ? edu.tags : []
+
   return {
     moduleKey: 'education' as const,
     moduleLabel: '教育经历',
@@ -32,11 +35,26 @@ function buildEducationAiContext(edu: (typeof store.educationList)[number]) {
       学院: edu.college,
       专业: edu.major,
       学历: edu.degree,
+      教育标签: tags.join('、'),
       时间: [edu.startDate, edu.endDate].filter(Boolean).join(' ~ '),
       GPA: edu.gpa,
     },
     targetJob: store.basicInfo.jobTitle?.trim() || '',
   }
+}
+
+function isEducationTagSelected(edu: (typeof store.educationList)[number], tag: string): boolean {
+  return Array.isArray(edu.tags) && edu.tags.includes(tag)
+}
+
+function toggleEducationTag(edu: (typeof store.educationList)[number], tag: string) {
+  const tags = Array.isArray(edu.tags) ? edu.tags : []
+
+  if (tags.includes(tag)) {
+    edu.tags = tags.filter((item) => item !== tag)
+    return
+  }
+  edu.tags = [...tags, tag]
 }
 </script>
 
@@ -51,21 +69,53 @@ function buildEducationAiContext(edu: (typeof store.educationList)[number]) {
       </div>
     </div>
 
-    <div v-show="!collapsed" class="section-body">
+    <div v-show="!collapsed" class="section-body compact-section-body">
       <div
         v-for="(edu, index) in store.educationList"
         :key="edu.id"
-        class="entry-card"
+        class="entry-card compact-entry-card"
       >
         <div class="entry-header">
           <span class="entry-index">教育经历 {{ index + 1 }}</span>
-          <button
+          <div
             v-if="store.educationList.length > 1"
-            class="btn-remove"
-            @click="store.removeEducation(edu.id)"
+            class="entry-actions"
+            aria-label="调整教育经历顺序"
           >
-            ✕
-          </button>
+            <button
+              type="button"
+              class="btn-reorder"
+              title="上移"
+              aria-label="上移教育经历"
+              :disabled="index === 0"
+              @click.stop="store.moveEducation(edu.id, 'up')"
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M8 3.5L4.5 7M8 3.5L11.5 7M8 3.5V12.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              class="btn-reorder"
+              title="下移"
+              aria-label="下移教育经历"
+              :disabled="index === store.educationList.length - 1"
+              @click.stop="store.moveEducation(edu.id, 'down')"
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M8 12.5L4.5 9M8 12.5L11.5 9M8 12.5V3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              class="btn-remove"
+              title="删除"
+              aria-label="删除教育经历"
+              @click.stop="store.removeEducation(edu.id)"
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
         <div class="form-grid">
@@ -97,12 +147,12 @@ function buildEducationAiContext(edu: (typeof store.educationList)[number]) {
           </div>
           <div class="form-group">
             <label class="form-label">开始时间</label>
-            <input v-model="edu.startDate" type="month" class="form-input" :class="{ 'has-error': dateErrors[index] }" @blur="validateEntryDates(index, edu.startDate, edu.endDate)" />
+            <input v-model="edu.startDate" type="month" class="form-input" :class="{ 'has-error': dateErrors[edu.id] }" @blur="validateEntryDates(edu.id, edu.startDate, edu.endDate)" />
           </div>
           <div class="form-group">
             <label class="form-label">结束时间</label>
-            <input v-model="edu.endDate" type="month" class="form-input" :class="{ 'has-error': dateErrors[index] }" @blur="validateEntryDates(index, edu.startDate, edu.endDate)" />
-            <span v-if="dateErrors[index]" class="form-error">{{ dateErrors[index] }}</span>
+            <input v-model="edu.endDate" type="month" class="form-input" :class="{ 'has-error': dateErrors[edu.id] }" @blur="validateEntryDates(edu.id, edu.startDate, edu.endDate)" />
+            <span v-if="dateErrors[edu.id]" class="form-error">{{ dateErrors[edu.id] }}</span>
           </div>
           <div class="form-group">
             <label class="form-label">学历类型</label>
@@ -120,6 +170,23 @@ function buildEducationAiContext(edu: (typeof store.educationList)[number]) {
         </div>
 
         <div class="form-group form-group-full">
+          <label class="form-label">教育标签</label>
+          <div class="tag-picker" aria-label="选择教育标签">
+            <button
+              v-for="tag in educationTagOptions"
+              :key="tag"
+              type="button"
+              class="tag-option"
+              :class="{ active: isEducationTagSelected(edu, tag) }"
+              :aria-pressed="isEducationTagSelected(edu, tag)"
+              @click="toggleEducationTag(edu, tag)"
+            >
+              {{ tag }}
+            </button>
+          </div>
+        </div>
+
+        <div class="form-group form-group-full">
           <InlineAiRichEditor
             v-model="edu.description"
             :rows="3"
@@ -130,7 +197,7 @@ function buildEducationAiContext(edu: (typeof store.educationList)[number]) {
         </div>
       </div>
 
-      <button class="btn-add" @click="store.addEducation()">
+      <button class="btn-add compact-add-btn" @click="store.addEducation()">
         <span class="btn-add-icon">+</span>
         添加教育经历
       </button>
@@ -145,11 +212,12 @@ function buildEducationAiContext(edu: (typeof store.educationList)[number]) {
   border-radius: var(--radius-lg);
   background: var(--bg-card);
   overflow: hidden;
-  transition: box-shadow var(--transition-base);
+  transition: border-color var(--transition-base);
 }
 
 .editor-section:hover {
-  box-shadow: var(--shadow-sm);
+  border-color: var(--border-color-strong);
+  box-shadow: none;
 }
 
 .section-header {
@@ -213,6 +281,38 @@ function buildEducationAiContext(edu: (typeof store.educationList)[number]) {
   color: var(--primary-600);
 }
 
+.entry-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-reorder {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-reorder:hover:not(:disabled) {
+  border-color: var(--primary-300);
+  background: var(--primary-50);
+  color: var(--primary-600);
+}
+
+.btn-reorder:disabled {
+  color: var(--gray-400);
+  background: var(--gray-100);
+  border-color: transparent;
+}
+
 .btn-remove {
   width: 24px;
   height: 24px;
@@ -268,11 +368,47 @@ function buildEducationAiContext(edu: (typeof store.educationList)[number]) {
 
 .form-input:focus {
   border-color: var(--primary-400);
-  box-shadow: 0 0 0 3px var(--primary-50);
+  box-shadow: none;
 }
 
 .form-input::placeholder {
   color: var(--gray-400);
+}
+
+.tag-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tag-option {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-full);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.tag-option:hover {
+  border-color: var(--primary-300);
+  color: var(--primary-600);
+  background: var(--primary-50);
+}
+
+.tag-option.active {
+  border-color: var(--primary-400);
+  color: var(--primary-700);
+  background: var(--primary-50);
+  box-shadow: none;
 }
 
 .form-textarea {
@@ -291,7 +427,7 @@ function buildEducationAiContext(edu: (typeof store.educationList)[number]) {
 
 .form-textarea:focus {
   border-color: var(--primary-400);
-  box-shadow: 0 0 0 3px var(--primary-50);
+  box-shadow: none;
 }
 
 .form-textarea::placeholder {

@@ -8,7 +8,7 @@ export const RESUME_IMPORT_SYSTEM_PROMPT = `你是一个专业的简历信息提
 ## 全局规则
 
 1. 你必须且只能返回一个合法的 JSON 对象，不要包含任何 markdown 代码块标记、解释文字或额外内容。
-2. 日期格式统一为 "YYYY.MM" 或 "YYYY.MM.DD"，如果无法推断具体日期就留空字符串。
+2. 日期格式统一为 "YYYY-MM" 或 "YYYY-MM-DD"，如果无法推断具体日期就留空字符串。
 3. 如果某个字段在简历中找不到，请使用空字符串 "" 而不是 null 或 undefined。切忌胡乱编造！
 4. 列表条目中不需要提供 id 字段。
 5. 工作经历和项目经历按时间倒序排列（最近的排在前面）。
@@ -51,6 +51,7 @@ export const RESUME_IMPORT_SYSTEM_PROMPT = `你是一个专业的简历信息提
       "gpa": "GPA（如有）",
       "description": "教育经历的补充描述（Markdown格式，如有）",
       "type": "教育类型（如 全日制、在职、自考）",
+      "tags": ["教育标签（仅提取原文明确出现的 985、211、双一流、职业培训、海外院校、重点本科等，不要根据学校名推测）"],
       "location": "学校所在城市"
     }
   ],
@@ -102,6 +103,7 @@ export const RESUME_IMPORT_SYSTEM_PROMPT = `你是一个专业的简历信息提
 - 每段教育经历必须有一条独立记录，不要合并多段学历。
 - degree 必须映射为标准值：博士、硕士、学士、大专、高中、中专、其他。不要写"本科"，用"学士"代替。
 - college 和 major 要区分清楚：college 是"XX学院"这种二级单位，major 是具体专业如"计算机科学与技术"。
+- tags 只提取原文明确写出的教育标签，如 985、211、双一流、职业培训、海外院校、重点本科；不要凭常识或学校名推测，未写则返回空数组。
 - 如果简历中只写了学历没有写具体学校（如"本科"但没写学校名），仍然创建一条记录，school 留空但 degree 填入对应值。
 - 多段教育经历按时间倒序排列。
 
@@ -128,7 +130,7 @@ export const RESUME_IMPORT_SYSTEM_PROMPT = `你是一个专业的简历信息提
 
 ### 🏆 荣誉奖项（awardList）
 - 每个奖项独立一条记录。
-- date 统一为 "YYYY.MM" 或 "YYYY" 格式。
+- date 统一为 "YYYY-MM" 或 "YYYY" 格式。
 - 如果奖项有级别信息（如"省级"、"国家级"），放入 description 字段。
 - 排序：按时间倒序。
 
@@ -192,19 +194,19 @@ export const RESUME_IMPORT_SECTION_USER_PROMPT_TEMPLATE = `请只提取简历中
  * 相比完整 prompt 减少约 60% token，提高并行分段提取的速度和精度
  */
 export const RESUME_IMPORT_SECTION_SYSTEM_PROMPTS: Record<string, string> = {
-  basicInfo: `你是简历信息提取助手。只提取基本信息，返回合法 JSON。日期格式 "YYYY.MM"，找不到的字段用空字符串。
+  basicInfo: `你是简历信息提取助手。只提取基本信息，返回合法 JSON。日期格式 "YYYY-MM"，找不到的字段用空字符串。
 返回格式：{"basicInfo": {"name":"","phone":"","email":"","age":"","gender":"","location":"","jobTitle":"","educationLevel":"","avatar":"","workYears":"","currentStatus":"","expectedLocation":"","expectedSalary":"","website":"","wechat":"","currentCity":"","github":"","blog":""}}
 规则：phone 只保留手机号（多个取第一个）；email 只保留邮箱（多个取第一个）；workYears 根据最早工作推算；educationLevel 取最高学历；jobTitle 优先取求职意向；github/blog/website 只取 URL 不加前缀。`,
 
-  educationList: `你是简历信息提取助手。只提取教育经历，返回合法 JSON。日期格式 "YYYY.MM"，找不到的字段用空字符串。按时间倒序排列。
-返回格式：{"educationList": [{"school":"","college":"","major":"","degree":"","startDate":"","endDate":"","gpa":"","description":"","type":"","location":""}]}
-规则：每段学历独立一条记录，不合并；degree 映射为 博士/硕士/学士/大专/高中/中专（不写"本科"）；college 是二级单位如"XX学院"，major 是具体专业；仅有学历无学校名仍创建记录。`,
+  educationList: `你是简历信息提取助手。只提取教育经历，返回合法 JSON。日期格式 "YYYY-MM"，找不到的字段用空字符串。按时间倒序排列。
+返回格式：{"educationList": [{"school":"","college":"","major":"","degree":"","startDate":"","endDate":"","gpa":"","description":"","type":"","tags":[],"location":""}]}
+规则：每段学历独立一条记录，不合并；degree 映射为 博士/硕士/学士/大专/高中/中专（不写"本科"）；college 是二级单位如"XX学院"，major 是具体专业；tags 只提取原文明确写出的 985/211/双一流/职业培训/海外院校/重点本科 等标签，禁止凭学校名推测；仅有学历无学校名仍创建记录。`,
 
-  workList: `你是简历信息提取助手。只提取工作经历，返回合法 JSON。日期格式 "YYYY.MM"，找不到的字段用空字符串。按时间倒序排列。
+  workList: `你是简历信息提取助手。只提取工作经历，返回合法 JSON。日期格式 "YYYY-MM"，找不到的字段用空字符串。按时间倒序排列。
 返回格式：{"workList": [{"company":"","department":"","position":"","startDate":"","endDate":"","location":"","description":""}]}
 规则：每段工作独立一条记录，不合并；company 用全称或简称，不含"有限公司"后缀；**绝对不允许在不同工作间串改、合并、张冠李戴内容！** 必须一字不差保留换行、空格、原始符号（•、-、1.等），禁止自己加标点或合并段落；在职公司 endDate 留空。`,
 
-  projectList: `你是简历信息提取助手。只提取项目经历，返回合法 JSON。日期格式 "YYYY.MM"，找不到的字段用空字符串。按时间倒序排列。
+  projectList: `你是简历信息提取助手。只提取项目经历，返回合法 JSON。日期格式 "YYYY-MM"，找不到的字段用空字符串。按时间倒序排列。
 返回格式：{"projectList": [{"name":"","role":"","startDate":"","endDate":"","link":"","introduction":"","mainWork":""}]}
 规则：每个项目独立一条记录；将项目所有文案（简介、工作、负责内容）**原封不动字对字**放在 mainWork 中，不拆分；绝不提炼大纲，严格保留所有换行和排版；role 填具体角色如"前端负责人"。`,
 
@@ -212,7 +214,7 @@ export const RESUME_IMPORT_SECTION_SYSTEM_PROMPTS: Record<string, string> = {
 返回格式：{"skills": "Markdown格式技能列表"}
 规则：用 Markdown 无序列表按类别分组（如 **前端：** Vue3、React）；技能用通用标准写法（K8s→Kubernetes，但原文已是K8s可保留）；保留"熟练""精通"等程度词。`,
 
-  awardList: `你是简历信息提取助手。只提取荣誉奖项，返回合法 JSON。日期格式 "YYYY.MM" 或 "YYYY"。按时间倒序排列。
+  awardList: `你是简历信息提取助手。只提取荣誉奖项，返回合法 JSON。日期格式 "YYYY-MM" 或 "YYYY"。按时间倒序排列。
 返回格式：{"awardList": [{"name":"","date":"","description":""}]}
 规则：每个奖项独立一条记录；级别信息（省级/国家级）放 description。`,
 

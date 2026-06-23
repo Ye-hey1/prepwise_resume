@@ -559,6 +559,18 @@ function reParse() {
 }
 
 // -------- 字段编辑 --------
+function educationImportTitleParts(edu: NonNullable<ImportData['educationList']>[number]): string[] {
+  return [edu.major, edu.college, edu.degree]
+    .map((value) => value?.trim() ?? '')
+    .filter(Boolean)
+}
+
+function educationImportTags(edu: NonNullable<ImportData['educationList']>[number]): string[] {
+  return Array.isArray(edu.tags)
+    ? Array.from(new Set(edu.tags.map((tag) => tag.trim()).filter(Boolean)))
+    : []
+}
+
 function startEditing(fieldPath: string, currentValue: string) {
   editingField.value = fieldPath
   editingValue.value = currentValue
@@ -577,7 +589,9 @@ function saveEditing(fieldPath: string) {
   }
   const lastPart = parts[parts.length - 1]
   if (current && lastPart) {
-    current[lastPart] = editingValue.value
+    current[lastPart] = lastPart === 'tags'
+      ? editingValue.value.split(/[,，、\s]+/).map((tag) => tag.trim()).filter(Boolean)
+      : editingValue.value
   }
 
   parsedData.value = data as ImportData
@@ -989,20 +1003,35 @@ onUnmounted(() => {
                     </span>
                     <span v-else class="hover-editable" @click="startEditing(`educationList.${idx}.school`, edu.school || '')">{{ edu.school || '未知学校' }}</span>
                   </span>
-                  <span class="sub-card-meta">
-                    <span v-if="editingField === `educationList.${idx}.major`" class="inline-edit">
-                      <input v-model="editingValue" class="field-input" @keyup.enter="saveEditing(`educationList.${idx}.major`)" @keyup.esc="cancelEditing" />
-                      <button class="field-action-btn save" @click="saveEditing(`educationList.${idx}.major`)">✓</button>
+                  <span class="sub-card-meta import-education-meta">
+                    <template v-if="educationImportTitleParts(edu).length">
+                      <span
+                        v-for="(part, partIdx) in educationImportTitleParts(edu)"
+                        :key="`edu-import-title-${idx}-${partIdx}`"
+                      >
+                        {{ part }}
+                      </span>
+                    </template>
+                    <span v-else class="hover-editable" @click="startEditing(`educationList.${idx}.major`, edu.major || '')">添加专业/学院/学历</span>
+                    <span v-if="editingField === `educationList.${idx}.tags`" class="inline-edit">
+                      <input v-model="editingValue" class="field-input" placeholder="985、211、双一流" @keyup.enter="saveEditing(`educationList.${idx}.tags`)" @keyup.esc="cancelEditing" />
+                      <button class="field-action-btn save" @click="saveEditing(`educationList.${idx}.tags`)">✓</button>
                       <button class="field-action-btn cancel" @click="cancelEditing">✕</button>
                     </span>
-                    <span v-else class="hover-editable" @click="startEditing(`educationList.${idx}.major`, edu.major || '')">{{ edu.major || '添加专业' }}</span>
-                    <span style="margin: 0 4px">·</span>
-                    <span v-if="editingField === `educationList.${idx}.degree`" class="inline-edit">
-                      <input v-model="editingValue" class="field-input" @keyup.enter="saveEditing(`educationList.${idx}.degree`)" @keyup.esc="cancelEditing" />
-                      <button class="field-action-btn save" @click="saveEditing(`educationList.${idx}.degree`)">✓</button>
-                      <button class="field-action-btn cancel" @click="cancelEditing">✕</button>
+                    <span
+                      v-else
+                      class="import-education-tags hover-editable"
+                      @click="startEditing(`educationList.${idx}.tags`, educationImportTags(edu).join('、'))"
+                    >
+                      <span
+                        v-for="tag in educationImportTags(edu)"
+                        :key="`edu-import-tag-${idx}-${tag}`"
+                        class="import-education-tag"
+                      >
+                        {{ tag }}
+                      </span>
+                      <span v-if="!educationImportTags(edu).length" class="import-education-tag is-empty">+ 标签</span>
                     </span>
-                    <span v-else class="hover-editable" @click="startEditing(`educationList.${idx}.degree`, edu.degree || '')">{{ edu.degree || '添加学历' }}</span>
                   </span>
                 </div>
                 <div class="sub-card-time">
@@ -1079,7 +1108,7 @@ onUnmounted(() => {
                 </div>
               </template>
               <template v-else>
-                <div v-if="work.description" class="sub-card-desc rich-text hover-editable" @click="startEditing(`workList.${idx}.description`, work.description)" v-html="work.description"></div>
+                <div v-if="work.description" class="sub-card-desc rich-text hover-editable" @click="startEditing(`workList.${idx}.description`, work.description)" v-safe-html="work.description"></div>
                 <div v-else class="sub-card-desc text-muted hover-editable" @click="startEditing(`workList.${idx}.description`, '')">点击添加工作描述...</div>
               </template>
             </div>
@@ -1144,7 +1173,7 @@ onUnmounted(() => {
                 </div>
               </template>
               <template v-else>
-                <div v-if="proj.mainWork || proj.description" class="sub-card-desc rich-text hover-editable" @click="startEditing(`projectList.${idx}.mainWork`, proj.mainWork || proj.description || '')" v-html="proj.mainWork || proj.description"></div>
+                <div v-if="proj.mainWork || proj.description" class="sub-card-desc rich-text hover-editable" @click="startEditing(`projectList.${idx}.mainWork`, proj.mainWork || proj.description || '')" v-safe-html="proj.mainWork || proj.description"></div>
                 <div v-else class="sub-card-desc text-muted hover-editable" @click="startEditing(`projectList.${idx}.mainWork`, '')">点击添加项目描述...</div>
               </template>
             </div>
@@ -1168,7 +1197,7 @@ onUnmounted(() => {
               </div>
             </template>
             <template v-else>
-              <div class="skills-text rich-text hover-editable" @click="startEditing('skills', parsedData.skills || '')" v-html="parsedData.skills || '点击添加技能'"></div>
+              <div class="skills-text rich-text hover-editable" @click="startEditing('skills', parsedData.skills || '')" v-safe-html="parsedData.skills || '点击添加技能'"></div>
             </template>
           </div>
 
@@ -1206,7 +1235,7 @@ onUnmounted(() => {
               </div>
             </template>
             <template v-else>
-              <div class="skills-text rich-text hover-editable" @click="startEditing('selfIntro', parsedData.selfIntro || '')" v-html="parsedData.selfIntro || '点击添加简介'"></div>
+              <div class="skills-text rich-text hover-editable" @click="startEditing('selfIntro', parsedData.selfIntro || '')" v-safe-html="parsedData.selfIntro || '点击添加简介'"></div>
             </template>
           </div>
         </div>
@@ -1832,7 +1861,6 @@ export function fieldLabel(key: string): string {
   height: 100%;
   transform: rotate(-90deg);
   z-index: 2;
-  filter: drop-shadow(0 4px 6px rgba(0,0,0,0.05));
 }
 
 .ring-bg {
@@ -2443,6 +2471,38 @@ export function fieldLabel(key: string): string {
   font-size: 13px;
   font-weight: 500;
   color: var(--text-secondary);
+}
+
+.import-education-meta {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.import-education-tags {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.import-education-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--primary-50);
+  color: var(--primary-700);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.import-education-tag.is-empty {
+  background: var(--gray-100);
+  color: var(--text-muted);
 }
 
 .sub-card-time {

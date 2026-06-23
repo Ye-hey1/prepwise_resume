@@ -99,8 +99,9 @@ const stageProgress = computed(() => {
 /** 计算当前面试官消息是第几个问题 */
 function getInterviewerIndex(msgIdx: number): number {
   let count = 0
-  for (let i = 0; i <= msgIdx; i++) {
-    if (props.messages[i]?.role === 'interviewer') count++
+  const safeLast = Math.min(msgIdx, props.messages.length - 1)
+  for (let i = 0; i <= safeLast; i++) {
+    if (props.messages[i]!.role === 'interviewer') count++
   }
   return count
 }
@@ -127,7 +128,7 @@ function handleTryIt(msgId: string) {
   if (idx < 0) return
   for (let i = idx + 1; i < props.messages.length && i <= idx + 2; i++) {
     if (props.messages[i]?.role === 'candidate') {
-      hiddenAnswerIds.value.add(props.messages[i].id)
+      hiddenAnswerIds.value.add(props.messages[i]!.id)
       break
     }
   }
@@ -141,6 +142,10 @@ function handleRevealAnswer(candidateMsgId: string) {
 }
 
 // ── P1-4: 笔记 ──
+function getNote(qIndex: number): string {
+  return notesByQuestion.value[qIndex] || ''
+}
+
 function updateNote(qIndex: number, value: string) {
   notesByQuestion.value[qIndex] = value
 }
@@ -153,8 +158,9 @@ function handleSaveToBank(coachMsg: CoachingMessage) {
   let question = ''
   let answer = ''
   for (let i = idx - 1; i >= 0; i--) {
-    if (!answer && props.messages[i].role === 'candidate') answer = props.messages[i].content
-    if (!question && props.messages[i].role === 'interviewer') question = props.messages[i].content
+    const msg = props.messages[i]!
+    if (!answer && msg.role === 'candidate') answer = msg.content
+    if (!question && msg.role === 'interviewer') question = msg.content
     if (question && answer) break
   }
   if (!question) return
@@ -301,7 +307,7 @@ function handleSaveToBank(coachMsg: CoachingMessage) {
               <!-- P1-4: 笔记入口 -->
               <div v-if="showNotes" class="inline-note">
                 <textarea
-                  :value="notesByQuestion[getInterviewerIndex(msgIdx - 2)] || ''"
+                  :value="getNote(getInterviewerIndex(msgIdx - 2))"
                   @input="updateNote(getInterviewerIndex(msgIdx - 2), ($event.target as HTMLTextAreaElement).value)"
                   class="inline-note-input"
                   placeholder="记录你的想法..."

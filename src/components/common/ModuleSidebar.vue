@@ -19,6 +19,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   (e: 'toggle-collapse'): void
+  (e: 'navigate'): void
 }>()
 
 const route = useRoute()
@@ -238,6 +239,7 @@ onUnmounted(() => {
           :to="getMenuRoute(menu.key)"
           :aria-current="isMenuActive(menu.key) ? 'page' : undefined"
           :title="menu.label"
+          @click="emit('navigate')"
         >
           <span class="menu-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none">
@@ -341,14 +343,17 @@ onUnmounted(() => {
   width: 272px;
   min-width: 272px;
   background: var(--bg-sidebar);
-  padding: 16px 14px;
+  padding: 14px 14px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   border-right: 1px solid var(--border-color-strong);
   overflow-y: auto;
   overflow-x: hidden;
-  transition: width 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), min-width 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), padding 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition:
+    width var(--duration-moderate) var(--ease-out-quint),
+    min-width var(--duration-moderate) var(--ease-out-quint),
+    padding var(--duration-moderate) var(--ease-out-quint);
   will-change: width;
   scrollbar-width: none;
 }
@@ -365,7 +370,17 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 14px;
+  padding: 8px 6px 14px;
+  border-bottom: 1px solid rgba(100, 120, 150, 0.14);
+}
+
+.brand.panel-surface {
+  background: transparent;
+  border-top: 0;
+  border-right: 0;
+  border-left: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .brand-left {
@@ -387,14 +402,15 @@ onUnmounted(() => {
 .brand-logo-wrap {
   width: 38px;
   height: 38px;
-  border-radius: 12px;
+  border-radius: 8px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   overflow: hidden;
-  box-shadow: 0 0 0 1px rgba(30, 42, 60, 0.08);
-  transition: all 0.55s cubic-bezier(0.2, 0.8, 0.2, 1);
+  border: 1px solid rgba(100, 120, 150, 0.18);
+  box-shadow: none;
+  transition: border-color var(--transition-fast);
 }
 
 .brand-logo {
@@ -405,15 +421,15 @@ onUnmounted(() => {
 
 .brand-text {
   font-family: 'Noto Sans SC', sans-serif;
-  font-size: 14px;
-  font-weight: 700;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
   color: var(--text-primary);
 }
 
 .brand-subtitle {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-secondary);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
 .collapse-btn {
@@ -421,15 +437,19 @@ onUnmounted(() => {
   width: 32px;
   height: 32px;
   border: 1px solid var(--border-color);
-  border-radius: 10px;
-  background: var(--glass-low);
+  border-radius: 8px;
+  background: transparent;
   color: var(--accent-blue-600);
-  font-size: 14px;
-  font-weight: 700;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
   line-height: 1;
   cursor: pointer;
   flex-shrink: 0;
-  transition: all 0.55s cubic-bezier(0.2, 0.8, 0.2, 1);
+  box-shadow: none;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
 }
 
 .collapse-btn::after {
@@ -440,15 +460,15 @@ onUnmounted(() => {
   transform: translate(-50%, -100%);
   background: var(--text-primary);
   color: var(--text-inverse);
-  font-size: 11px;
-  font-weight: 600;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
   line-height: 1;
   padding: 5px 8px;
   border-radius: 6px;
   white-space: nowrap;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 0.16s ease;
+  transition: opacity var(--transition-fast);
   z-index: 6;
 }
 
@@ -462,7 +482,7 @@ onUnmounted(() => {
   border-right: 5px solid transparent;
   border-top: 6px solid var(--text-primary);
   opacity: 0;
-  transition: opacity 0.16s ease;
+  transition: opacity var(--transition-fast);
   pointer-events: none;
   z-index: 6;
 }
@@ -475,15 +495,16 @@ onUnmounted(() => {
 }
 
 .collapse-btn:hover {
-  border-color: var(--accent-blue-500);
-  background: var(--glass-high);
+  border-color: rgba(43, 123, 184, 0.3);
+  background: rgba(43, 123, 184, 0.06);
   color: var(--accent-blue-600);
+  box-shadow: none;
 }
 
 .menu-caption {
   color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 700;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
   letter-spacing: 0.08em;
   padding: 0 6px;
   text-transform: uppercase;
@@ -495,55 +516,61 @@ onUnmounted(() => {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
 }
 
 .primary-menu-btn {
   width: 100%;
-  border: 1px solid var(--border-color);
-  background: var(--glass-minimal);
-  border-radius: var(--radius-lg);
-  padding: 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 8px;
+  padding: 10px 8px;
   display: flex;
   align-items: center;
   gap: 10px;
   text-align: left;
   cursor: pointer;
   text-decoration: none;
-  transition: all 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+  box-shadow: none;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
   overflow: hidden;
 }
 
 .primary-menu-btn:hover {
-  border-color: var(--accent-blue-500);
-  background: var(--glass-mid);
-  box-shadow: 0 10px 20px rgba(36, 29, 24, 0.06);
-  transform: translateY(-1px);
+  border-color: rgba(43, 123, 184, 0.2);
+  background: rgba(43, 123, 184, 0.06);
+  box-shadow: none;
+  transform: none;
 }
 
 .primary-menu-btn.active {
   border-color: rgba(43, 123, 184, 0.24);
-  background: var(--glass-high);
-  box-shadow: 0 14px 24px rgba(54, 80, 111, 0.12);
+  background: rgba(43, 123, 184, 0.08);
+  box-shadow: none;
 }
 
 .menu-icon {
   width: 30px;
   height: 30px;
-  border-radius: 10px;
-  background: rgba(43, 123, 184, 0.08);
+  border-radius: 8px;
+  background: rgba(43, 123, 184, 0.06);
   color: var(--accent-blue-600);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition: all 0.55s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
 }
 
 .menu-icon svg {
   width: 16px;
   height: 16px;
-  transition: all 0.55s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: all var(--transition-slow);
 }
 
 .menu-icon path {
@@ -554,14 +581,14 @@ onUnmounted(() => {
 }
 
 .primary-menu-btn.active .menu-icon {
-  background: linear-gradient(135deg, var(--accent-blue-500), var(--accent-blue-600));
-  color: var(--text-inverse);
+  background: rgba(43, 123, 184, 0.14);
+  color: var(--accent-blue-700, var(--accent-blue-600));
 }
 
 .menu-label {
   color: var(--text-primary);
-  font-size: 13px;
-  font-weight: 700;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
   white-space: nowrap;
   overflow: hidden;
 }
@@ -593,11 +620,11 @@ onUnmounted(() => {
 
 /* hover 时 logo 向左偏移，给箭头腾出空间 */
 .sidebar.collapsed .brand-left {
-  transition: transform 0.22s ease;
+  transition: transform var(--transition-fast);
 }
 
 .sidebar.collapsed .brand:hover .brand-left {
-  transform: translateX(-6px);
+  transform: none;
 }
 
 .sidebar.collapsed .collapse-btn {
@@ -608,12 +635,12 @@ onUnmounted(() => {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  font-size: 11px;
+  font-size: var(--text-xs);
   line-height: 1;
   padding: 0;
   opacity: 0;
-  background: var(--bg-elevated);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+  background: var(--bg-sidebar);
+  box-shadow: none;
 }
 
 .sidebar.collapsed .brand:hover .collapse-btn {
@@ -674,20 +701,25 @@ onUnmounted(() => {
   width: 100%;
   height: 48px;
   border: 1px solid var(--border-color);
-  border-radius: 14px;
-  background: var(--glass-low);
+  border-radius: 8px;
+  background: transparent;
   color: var(--text-primary);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: border-color 0.16s ease, background-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+  transition:
+    border-color var(--transition-fast),
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+  box-shadow: none;
 }
 
 .footer-action-btn:hover {
-  border-color: var(--accent-blue-500);
-  box-shadow: 0 8px 18px rgba(30, 42, 60, 0.08);
-  transform: translateY(-1px);
+  border-color: rgba(43, 123, 184, 0.3);
+  background: rgba(43, 123, 184, 0.06);
+  box-shadow: none;
+  transform: none;
 }
 
 .footer-action-btn.active {
@@ -706,7 +738,7 @@ onUnmounted(() => {
 }
 
 .footer-action-icon-lg {
-  font-size: 22px;
+  font-size: var(--text-xl);
 }
 
 .footer-action-settings {
@@ -726,8 +758,8 @@ onUnmounted(() => {
   min-width: 156px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
+  border-radius: 8px;
+  box-shadow: none;
   overflow: hidden;
   z-index: 10;
 }
@@ -742,8 +774,8 @@ onUnmounted(() => {
   border: none;
   background: transparent;
   color: var(--text-primary);
-  font-size: 12px;
-  font-weight: 500;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
   cursor: pointer;
   text-align: left;
 }
@@ -755,7 +787,7 @@ onUnmounted(() => {
 
 .theme-menu-item.active {
   color: var(--primary-500);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
 }
 
 .data-menu-item-file {
@@ -777,5 +809,30 @@ onUnmounted(() => {
 
 .sidebar.collapsed .footer-actions-row {
   grid-template-columns: 1fr;
+}
+
+/* ═══ Mobile drawer mode (≤1024px) ═══ */
+@media (max-width: 1024px) {
+  .sidebar {
+    width: 260px;
+    min-width: 260px;
+    border-right: 1px solid var(--border-color-strong);
+    padding-top: calc(env(safe-area-inset-top, 0px) + 16px);
+    padding-left: calc(env(safe-area-inset-left, 0px) + 14px);
+    padding-right: calc(env(safe-area-inset-right, 0px) + 14px);
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  }
+
+  .collapse-btn {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .sidebar {
+    width: 100vw;
+    min-width: 100vw;
+    border-right: none;
+  }
 }
 </style>

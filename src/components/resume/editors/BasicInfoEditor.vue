@@ -150,7 +150,6 @@ const ChevronIcon = `
             <div>
               <p class="block-title">形象资料</p>
             </div>
-            <span class="block-badge">可选</span>
           </div>
 
           <div class="avatar-area compact-avatar-area">
@@ -181,8 +180,7 @@ const ChevronIcon = `
         <div class="info-card card-surface-soft">
           <div class="card-headline">
             <div>
-              <p class="block-title">联系信息</p>
-              <p class="block-hint">保留模板页眉最常用的身份与联系字段。</p>
+              <p class="block-title">个人信息</p>
             </div>
           </div>
 
@@ -227,7 +225,7 @@ const ChevronIcon = `
                   <option value="男">男</option>
                   <option value="女">女</option>
                 </select>
-                <div class="select-arrow-custom" v-html="ChevronIcon"></div>
+                <div class="select-arrow-custom" v-safe-html="ChevronIcon"></div>
               </div>
             </div>
             <div class="form-group">
@@ -246,7 +244,7 @@ const ChevronIcon = `
                   @click="toggleDropdown('workYears', $event)"
                   aria-label="选择预设"
                 >
-                  <div class="select-arrow-custom" v-html="ChevronIcon"></div>
+                  <div class="select-arrow-custom" v-safe-html="ChevronIcon"></div>
                 </button>
                 <Transition name="dropdown-fade">
                   <ul v-if="activeDropdown === 'workYears'" class="combo-dropdown">
@@ -286,7 +284,7 @@ const ChevronIcon = `
                 <option value="离职-随时到岗">离职-随时到岗</option>
                 <option value="在校生">在校生</option>
               </select>
-              <div class="select-arrow-custom" v-html="ChevronIcon"></div>
+              <div class="select-arrow-custom" v-safe-html="ChevronIcon"></div>
             </div>
           </div>
           <div class="form-group">
@@ -316,7 +314,7 @@ const ChevronIcon = `
                 @click="toggleDropdown('expectedSalary', $event)"
                 aria-label="选择预设"
               >
-                <div class="select-arrow-custom" v-html="ChevronIcon"></div>
+                <div class="select-arrow-custom" v-safe-html="ChevronIcon"></div>
               </button>
               <Transition name="dropdown-fade">
                 <ul v-if="activeDropdown === 'expectedSalary'" class="combo-dropdown">
@@ -332,19 +330,7 @@ const ChevronIcon = `
               </Transition>
             </div>
           </div>
-        </div>
-      </div>
 
-      <div class="sub-section">
-        <div class="sub-section-head">
-          <div>
-            <p class="sub-section-kicker">Profile</p>
-            <h4 class="sub-section-title">补充资料</h4>
-          </div>
-          <p class="sub-section-desc">补充学历、城市和公开链接，让简历页眉信息更完整。</p>
-        </div>
-
-        <div class="form-grid-2">
           <div class="form-group">
             <label class="form-label">最高学历</label>
             <div class="select-wrapper">
@@ -355,17 +341,18 @@ const ChevronIcon = `
                 <option value="硕士">硕士</option>
                 <option value="博士">博士</option>
               </select>
-              <div class="select-arrow-custom" v-html="ChevronIcon"></div>
+              <div class="select-arrow-custom" v-safe-html="ChevronIcon"></div>
             </div>
           </div>
         </div>
+      </div>
 
-        <!-- 更多展示字段：整合进补充资料主体喵 -->
-        <div class="extra-field-section">
+      <div class="sub-section">
+        <!-- 更多展示字段：整合进基础信息主体 -->
+        <div class="extra-field-section compact-extra-field-section">
           <div class="extra-field-header">
             <div class="extra-field-title-row">
               <span class="extra-field-title">更多展示字段</span>
-              <span class="block-hint">按需添加页眉信息，保持简洁即可。</span>
             </div>
             <span class="block-badge">已启用 {{ enabledExtraCount }}</span>
           </div>
@@ -424,14 +411,14 @@ const ChevronIcon = `
   border-radius: calc(var(--radius-lg) + 4px);
   background:
     linear-gradient(180deg, rgba(255, 253, 250, 0.96), rgba(249, 244, 238, 0.98));
-  box-shadow: var(--shadow-sm);
+  box-shadow: none;
   overflow: hidden;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+  transition: border-color 0.18s ease;
 }
 
 .editor-section:hover {
   border-color: var(--border-color-strong);
-  box-shadow: var(--shadow-md);
+  box-shadow: none;
 }
 
 .section-header {
@@ -546,7 +533,7 @@ const ChevronIcon = `
   border: 1px solid rgba(100, 120, 150, 0.16);
   border-radius: var(--radius-lg);
   background: var(--glass-low);
-  box-shadow: inset 0 1px 0 var(--glass-minimal);
+  box-shadow: none;
 }
 
 .card-surface-soft,
@@ -605,14 +592,14 @@ const ChevronIcon = `
   cursor: pointer;
   position: relative;
   overflow: hidden;
-  box-shadow: inset 0 0 0 1px var(--glass-minimal);
-  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+  box-shadow: none;
+  transition: border-color 0.18s ease;
 }
 
 .avatar-preview:hover {
-  transform: translateY(-1px);
+  transform: none;
   border-color: rgba(43, 123, 184, 0.42);
-  box-shadow: 0 16px 30px rgba(61, 91, 122, 0.12);
+  box-shadow: none;
 }
 
 .avatar-preview img {
@@ -683,12 +670,12 @@ const ChevronIcon = `
   font-weight: 700;
   text-align: center;
   cursor: pointer;
-  transition: border-color 0.18s ease, color 0.18s ease, background-color 0.18s ease, transform 0.18s ease;
+  transition: border-color 0.18s ease, color 0.18s ease, background-color 0.18s ease;
 }
 
 .btn-secondary:hover,
 .btn-danger-lite:hover {
-  transform: translateY(-1px);
+  transform: none;
 }
 
 .btn-secondary:hover {
@@ -797,13 +784,9 @@ const ChevronIcon = `
   left: 0;
   right: 0;
   background: var(--glass-high);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
   border: 1px solid var(--border-color-strong);
   border-radius: 12px;
-  box-shadow: 
-    0 4px 6px -1px rgba(0, 0, 0, 0.1),
-    0 10px 20px -5px rgba(42, 33, 26, 0.12);
+  box-shadow: none;
   padding: 6px;
   margin: 0;
   list-style: none;
@@ -858,14 +841,14 @@ const ChevronIcon = `
   color: var(--text-primary);
   background: var(--bg-card);
   box-sizing: border-box;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
+  transition: border-color 0.18s ease, background-color 0.18s ease;
   outline: none;
 }
 
 .form-input:focus {
   border-color: rgba(43, 123, 184, 0.4);
   background: var(--surface-white);
-  box-shadow: var(--focus-ring);
+  box-shadow: none;
 }
 
 .form-input::placeholder {
@@ -882,7 +865,7 @@ const ChevronIcon = `
 
 .form-input.has-error {
   border-color: rgba(216, 83, 83, 0.42);
-  box-shadow: 0 0 0 3px rgba(216, 83, 83, 0.1);
+  box-shadow: none;
 }
 
 .extra-field-section {
@@ -949,20 +932,20 @@ const ChevronIcon = `
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
-  transition: border-color 0.18s ease, background-color 0.18s ease, color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+  transition: border-color 0.18s ease, background-color 0.18s ease, color 0.18s ease;
 }
 
 .extra-option:hover {
-  transform: translateY(-1px);
+  transform: none;
   border-color: rgba(43, 123, 184, 0.24);
-  box-shadow: 0 10px 18px rgba(61, 91, 122, 0.06);
+  box-shadow: none;
 }
 
 .extra-option.active {
   border-color: rgba(43, 123, 184, 0.28);
   background: linear-gradient(180deg, rgba(234, 239, 246, 0.94), var(--glass-high));
   color: var(--accent-blue-600);
-  box-shadow: 0 12px 20px rgba(61, 91, 122, 0.08);
+  box-shadow: none;
 }
 
 .extra-option-check {

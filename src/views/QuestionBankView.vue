@@ -3,6 +3,8 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import AddQuestionDialog from '@/components/questionBank/AddQuestionDialog.vue'
 import AiGenerateDialog from '@/components/questionBank/AiGenerateDialog.vue'
+import RealExperienceDialog from '@/components/questionBank/RealExperienceDialog.vue'
+import SourceBadge from '@/components/questionBank/SourceBadge.vue'
 
 defineOptions({ name: 'QuestionBankView' })
 import { useQuestionBankStore, type SavedQuestion } from '@/stores/questionBank'
@@ -12,6 +14,7 @@ import { nonStreamAIRequest } from '@/services/stream'
 
 type MasteryFilter = 'all' | 'unpracticed' | 'weak' | 'ready'
 type SortMode = 'newest' | 'weak-first' | 'mastery-desc'
+type SourceFilter = 'all' | 'ai_generated' | 'real_experience' | 'jd_analysis'
 
 const DRILL_SEED_STORAGE_KEY = 'prepwise_question_bank_drill_seed'
 
@@ -22,6 +25,7 @@ const router = useRouter()
 
 const showAddDialog = ref(false)
 const showAiDialog = ref(false)
+const showRealExperienceDialog = ref(false)
 const selectedQuestion = ref<SavedQuestion | null>(null)
 const editingNotes = ref(false)
 const savingNotes = ref(false)
@@ -35,6 +39,14 @@ const searchQuery = ref('')
 const activeCategory = ref('')
 const masteryFilter = ref<MasteryFilter>('all')
 const sortBy = ref<SortMode>('newest')
+const sourceFilter = ref<SourceFilter>('all')
+
+const sourceOptions: Array<{ value: SourceFilter; label: string }> = [
+  { value: 'all', label: '全部来源' },
+  { value: 'ai_generated', label: 'AI 生成' },
+  { value: 'real_experience', label: '真实面经' },
+  { value: 'jd_analysis', label: 'JD 分析' },
+]
 
 const masteryOptions: Array<{ value: MasteryFilter; label: string }> = [
   { value: 'all', label: '全部掌握度' },
@@ -75,6 +87,17 @@ const filteredQuestions = computed(() => {
     })
   }
 
+  if (sourceFilter.value !== 'all') {
+    list = list.filter((item) => {
+      if (sourceFilter.value === 'real_experience') {
+        return item.source_type === 'real_experience' || 
+               item.tags?.includes('real_experience') ||
+               item.source === 'InterviewRadar'
+      }
+      return item.source_type === sourceFilter.value
+    })
+  }
+
   if (keyword) {
     list = list.filter((item) => {
       const haystack = [
@@ -102,17 +125,25 @@ const stats = computed(() => {
   const practiced = all.filter((item) => (item.mastery_level ?? 0) > 0).length
   const needsPractice = all.filter((item) => (item.mastery_level ?? 0) <= 2).length
   const withReference = all.filter((item) => Boolean(item.reference_answer?.trim())).length
+  const realExperience = all.filter((item) => 
+    item.source_type === 'real_experience' || 
+    item.tags?.includes('real_experience') ||
+    item.source === 'InterviewRadar'
+  ).length
+  const grounded = all.filter((item) => item.is_grounded).length
 
   return {
     total: all.length,
     needsPractice,
     practiced,
     withReference,
+    realExperience,
+    grounded,
   }
 })
 
 const hasActiveFilter = computed(() =>
-  Boolean(searchQuery.value.trim() || activeCategory.value || masteryFilter.value !== 'all'),
+  Boolean(searchQuery.value.trim() || activeCategory.value || masteryFilter.value !== 'all' || sourceFilter.value !== 'all'),
 )
 
 function sortQuestions(list: SavedQuestion[], mode: SortMode) {
@@ -151,6 +182,7 @@ function resetFilters() {
   activeCategory.value = ''
   masteryFilter.value = 'all'
   sortBy.value = 'newest'
+  sourceFilter.value = 'all'
 }
 
 function openQuestion(question: SavedQuestion) {
@@ -334,6 +366,16 @@ onMounted(() => {
           </svg>
           AI 生成
         </button>
+        <button class="action-btn secondary" type="button" @click="showRealExperienceDialog = true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+          </svg>
+          真实面经
+        </button>
         <button class="action-btn primary" type="button" @click="showAddDialog = true">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4">
             <path d="M12 5v14" />
@@ -349,6 +391,8 @@ onMounted(() => {
       <span>待练 <strong>{{ stats.needsPractice }}</strong></span>
       <span>已练 <strong>{{ stats.practiced }}</strong></span>
       <span>参考答案 <strong>{{ stats.withReference }}</strong></span>
+      <span>真实面经 <strong>{{ stats.realExperience }}</strong></span>
+      <span>可追溯 <strong>{{ stats.grounded }}</strong></span>
     </section>
 
     <section class="toolbar">
@@ -374,6 +418,15 @@ onMounted(() => {
         <span>掌握</span>
         <select v-model="masteryFilter">
           <option v-for="option in masteryOptions" :key="option.value" :value="option.value">
+            {{ option.label }}
+          </option>
+        </select>
+      </label>
+
+      <label class="select-field">
+        <span>来源</span>
+        <select v-model="sourceFilter">
+          <option v-for="option in sourceOptions" :key="option.value" :value="option.value">
             {{ option.label }}
           </option>
         </select>
@@ -474,6 +527,15 @@ onMounted(() => {
               <span v-if="!question.tags?.length" class="tag-pill muted">未标注标签</span>
             </div>
 
+            <div class="source-row">
+              <SourceBadge
+                :source-type="question.source_type"
+                :source-url="question.source_url"
+                :is-grounded="question.is_grounded"
+                :resume-anchor="question.resume_anchor"
+              />
+            </div>
+
             <footer class="card-actions">
               <button class="card-btn" type="button" @click="openQuestion(question)">查看</button>
               <button class="card-btn primary" type="button" @click="startPractice([question])">练习</button>
@@ -496,6 +558,14 @@ onMounted(() => {
         v-if="showAiDialog"
         @close="showAiDialog = false"
         @saved="showAiDialog = false"
+      />
+    </Transition>
+
+    <Transition name="modal-fade">
+      <RealExperienceDialog
+        v-if="showRealExperienceDialog"
+        @close="showRealExperienceDialog = false"
+        @saved="showRealExperienceDialog = false"
       />
     </Transition>
 
@@ -535,6 +605,52 @@ onMounted(() => {
                 >
                   {{ level }}
                 </button>
+              </div>
+            </section>
+
+            <section class="detail-section">
+              <div class="section-row">
+                <h3>题目来源</h3>
+                <SourceBadge
+                  :source-type="selectedQuestion.source_type"
+                  :source-url="selectedQuestion.source_url"
+                  :is-grounded="selectedQuestion.is_grounded"
+                  :resume-anchor="selectedQuestion.resume_anchor"
+                />
+              </div>
+              <div v-if="selectedQuestion.source_url" class="source-info">
+                <p class="source-url">
+                  <strong>来源链接：</strong>
+                  <a :href="selectedQuestion.source_url" target="_blank" rel="noopener noreferrer">
+                    {{ selectedQuestion.source_url }}
+                  </a>
+                </p>
+                <p v-if="selectedQuestion.posted_at" class="source-date">
+                  <strong>发布时间：</strong>{{ selectedQuestion.posted_at }}
+                </p>
+                <p v-if="selectedQuestion.frequency_score" class="source-score">
+                  <strong>频次分数：</strong>{{ selectedQuestion.frequency_score.toFixed(2) }}
+                </p>
+                <p v-if="selectedQuestion.recency_score" class="source-score">
+                  <strong>时效分数：</strong>{{ (selectedQuestion.recency_score * 100).toFixed(0) }}%
+                </p>
+              </div>
+            </section>
+
+            <section v-if="selectedQuestion.resume_anchor" class="detail-section">
+              <div class="section-row">
+                <h3>项目锚定</h3>
+                <span class="anchor-label">{{ selectedQuestion.resume_anchor }}</span>
+              </div>
+            </section>
+
+            <section v-if="selectedQuestion.follow_up_chain?.length" class="detail-section">
+              <h3>追问链</h3>
+              <div class="follow-up-chain">
+                <div v-for="(question, index) in selectedQuestion.follow_up_chain" :key="index" class="follow-up-item">
+                  <span class="follow-up-number">{{ index + 1 }}</span>
+                  <span class="follow-up-text">{{ question }}</span>
+                </div>
               </div>
             </section>
 
@@ -809,7 +925,7 @@ onMounted(() => {
 
 .toolbar {
   display: grid;
-  grid-template-columns: minmax(280px, 1fr) minmax(140px, 0.38fr) minmax(130px, 0.34fr) minmax(130px, 0.34fr) auto;
+  grid-template-columns: minmax(280px, 1fr) minmax(140px, 0.38fr) minmax(130px, 0.34fr) minmax(130px, 0.34fr) minmax(130px, 0.34fr) auto;
   gap: 10px;
   align-items: end;
   padding-bottom: 4px;
@@ -1002,6 +1118,11 @@ onMounted(() => {
   vertical-align: middle;
 }
 
+.source-row {
+  margin-top: 8px;
+  margin-bottom: 4px;
+}
+
 .card-actions {
   justify-content: flex-end;
   margin-top: auto;
@@ -1180,6 +1301,84 @@ onMounted(() => {
   line-height: 1.7;
 }
 
+.source-info {
+  padding: 12px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-card-muted);
+}
+
+.source-info p {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.source-info p:last-child {
+  margin-bottom: 0;
+}
+
+.source-info strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.source-info a {
+  color: var(--primary-500);
+  text-decoration: none;
+}
+
+.source-info a:hover {
+  text-decoration: underline;
+}
+
+.anchor-label {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--primary-500) 10%, var(--bg-card));
+  color: var(--primary-500);
+  border: 1px solid color-mix(in srgb, var(--primary-500) 20%, var(--border-color));
+}
+
+.follow-up-chain {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.follow-up-item {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-card-muted);
+}
+
+.follow-up-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--primary-500);
+  color: white;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.follow-up-text {
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
 .mastery-bar {
   display: flex;
   gap: 7px;
@@ -1314,7 +1513,7 @@ button:disabled {
   }
 
   .toolbar {
-    grid-template-columns: minmax(260px, 1fr) repeat(2, minmax(130px, 0.4fr));
+    grid-template-columns: minmax(260px, 1fr) repeat(3, minmax(130px, 0.4fr));
   }
 
   .reset-btn {

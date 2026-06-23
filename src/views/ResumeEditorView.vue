@@ -60,7 +60,7 @@ const isDragging = ref(false)
 
 /* ======== 编辑器面板 ======== */
 .editor-wrapper {
-  transition: flex 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: flex var(--duration-slow) var(--ease-standard);
   will-change: flex;
 }
 
@@ -88,10 +88,10 @@ const isDragging = ref(false)
    * 通过 delay 分阶段编排，让视觉主导效果始终是"向右滑出/从右滑入"
    */
   transition:
-    transform    0.45s cubic-bezier(0.4, 0, 0.2, 1) 0.08s,
-    opacity      0.35s ease                          0.05s,
-    flex         0.55s cubic-bezier(0.4, 0, 0.2, 1) 0s,
-    min-width    0.55s cubic-bezier(0.4, 0, 0.2, 1) 0s;
+    transform    var(--duration-slow) var(--ease-standard) 0.08s,
+    opacity      var(--duration-moderate) var(--ease-standard) 0.05s,
+    flex         var(--duration-slow) var(--ease-standard) 0s,
+    min-width    var(--duration-slow) var(--ease-standard) 0s;
   will-change: transform, opacity;
 }
 
@@ -111,10 +111,10 @@ const isDragging = ref(false)
    * 收起反向编排：先滑出 (transform)，再收敛空间 (flex/min-width)
    */
   transition:
-    transform    0.4s  cubic-bezier(0.5, 0, 1, 1)   0s,
-    opacity      0.3s  ease                          0s,
-    flex         0.5s  cubic-bezier(0.4, 0, 0.2, 1)  0.12s,
-    min-width    0.5s  cubic-bezier(0.4, 0, 0.2, 1)  0.12s;
+    transform    var(--duration-moderate) var(--ease-standard)  0s,
+    opacity      var(--duration-base) var(--ease-standard)      0s,
+    flex         var(--duration-slow) var(--ease-standard)      0.12s,
+    min-width    var(--duration-slow) var(--ease-standard)      0.12s;
 }
 
 /* ======== 分割线 ======== */
@@ -126,10 +126,10 @@ const isDragging = ref(false)
   overflow: hidden;
   margin: 0 !important;
   padding: 0 !important;
-  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all var(--transition-slow);
 }
 
-/* ======== 展开悬浮按钮 ======== */
+/* ======== 展开预览按钮 ======== */
 .toggle-preview-btn {
   position: absolute;
   top: 50%;
@@ -145,46 +145,123 @@ const isDragging = ref(false)
   height: 160px;
   padding: 16px 0;
   border-radius: 22px 0 0 22px;
-  background: linear-gradient(180deg, var(--accent-blue-500), var(--accent-blue-600));
-  border: none;
-  color: #ffffff;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color-strong);
+  border-right: none;
+  color: var(--accent-blue-600);
   font-size: 13px;
   font-weight: 700;
-  box-shadow: -4px 4px 16px rgba(54, 80, 111, 0.25);
+  box-shadow: none;
   cursor: pointer;
-  transition: all 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
 }
 
 .toggle-preview-span {
   writing-mode: vertical-rl;
   letter-spacing: 2px;
   text-orientation: upright;
-  color: rgba(255, 255, 255, 0.95);
+  color: inherit;
 }
 
 .toggle-preview-btn:hover {
-  background: linear-gradient(180deg, var(--accent-blue-400), var(--accent-blue-500));
-  transform: translateY(-50%) translateX(-4px);
-  box-shadow: -6px 6px 24px rgba(54, 80, 111, 0.35);
+  background: rgba(43, 123, 184, 0.08);
+  border-color: var(--accent-blue-500);
+  color: var(--accent-blue-600);
 }
 
 .toggle-preview-btn svg {
   color: currentColor;
-  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .toggle-preview-btn:hover svg {
-  transform: translateX(-4px);
+  transform: none;
 }
 
 .fade-enter-active,
 .fade-leave-active {
-  transition: opacity 0.45s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition:
+    opacity var(--duration-moderate) var(--ease-out-quint),
+    transform var(--duration-moderate) var(--ease-out-quint);
 }
 
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
   transform: translateY(-50%) translateX(32px);
+}
+
+/* ═══ Mobile: stack editor and preview (≤768px) ═══ */
+@media (max-width: 768px) {
+  .resume-editor-workbench {
+    flex-direction: column;
+  }
+
+  .editor-wrapper {
+    flex: 1 1 auto !important;
+    width: 100% !important;
+    min-height: 50%;
+    transition: none;
+  }
+
+  .preview-wrapper {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    min-height: 50%;
+    transition: none;
+  }
+
+  .preview-wrapper.collapsed {
+    flex: 0 0 0 !important;
+    min-height: 0 !important;
+    min-width: 0 !important;
+    transform: none;
+  }
+
+  .resume-editor-workbench.preview-collapsed .editor-wrapper {
+    flex: 1 1 100% !important;
+  }
+
+  .divider-hidden {
+    display: none;
+  }
+
+  .toggle-preview-btn {
+    position: fixed;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+    right: 16px;
+    top: auto;
+    transform: none;
+    width: auto;
+    height: 44px;
+    padding: 0 16px;
+    border-radius: 22px;
+    flex-direction: row;
+    gap: 6px;
+    border-right: 1px solid var(--border-color-strong);
+    box-shadow: none;
+  }
+
+  .toggle-preview-span {
+    writing-mode: horizontal-tb;
+    letter-spacing: normal;
+    text-orientation: mixed;
+  }
+
+  .toggle-preview-btn:hover {
+    transform: none;
+  }
+
+  .toggle-preview-btn svg {
+    transform: rotate(90deg);
+  }
+
+  .fade-enter-from,
+  .fade-leave-to {
+    opacity: 0;
+    transform: translateY(16px);
+  }
 }
 </style>

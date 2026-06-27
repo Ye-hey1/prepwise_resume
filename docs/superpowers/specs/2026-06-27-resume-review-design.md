@@ -36,7 +36,7 @@ The first version will not fetch GitHub data. It will only evaluate the current 
 1. User opens `Resume Review` from the sidebar.
 2. User can also click a shortcut from the resume editor to jump to the review page.
 3. The page reads the active resume data from `resumeStore`.
-4. If JD analysis exists, the page includes JD context and shows a JD fit score.
+4. If completed JD analysis exists, the page includes JD analysis context and shows a JD fit score.
 5. User clicks `Start Review`.
 6. The app calls the configured AI model and asks for strict JSON.
 7. The page shows:
@@ -98,17 +98,25 @@ Top-level fields:
 - `verdict`: `ready`, `needs_work`, or `high_risk`.
 - `roleFamily`: `technical` or `general`.
 - `summary`: short recruiter-style conclusion.
-- `categories`: category score list.
+- `generalCategories`: category score list for the selected role-family rubric.
+- `jdFitCategories`: category score list for the JD fit rubric, or an empty list when there is no completed JD analysis.
 - `tasks`: actionable optimization task list.
 - `fairnessNotes`: short note confirming excluded factors.
+
+JD context states:
+
+- `none`: no current JD text or JD analysis. The review request includes only resume context.
+- `raw`: JD text exists but no completed JD match analysis exists. Version one treats this the same as `none` for scoring; it may show a UI hint that running JD analysis will unlock JD fit scoring, but it must not send raw JD into the review prompt.
+- `completed`: both `jdData` and `matchResult` exist in `jdAnalysisStore`. Only this state enables JD fit scoring and JD analysis context in the review prompt.
 
 Score relationship rules:
 
 - `generalScore` is always produced from the selected role-family rubric.
-- `jdFitScore` is produced only when JD data exists. It uses a separate JD fit rubric based on the current JD analysis result, including requirement coverage, evidence strength, risk gaps, and role alignment.
-- When no JD data exists, `jdFitScore` is `null` and `overallScore` must equal `generalScore`.
-- When JD data exists, `overallScore` is computed client-side as `round(generalScore * 0.7 + jdFitScore * 0.3)`.
-- The AI may return all three fields, but `review.ts` is responsible for recomputing `overallScore` from the above rules after parsing. This keeps history comparison stable.
+- `jdFitScore` is produced only in the `completed` JD context state. It uses a separate JD fit rubric based on the current JD analysis result, including requirement coverage, evidence strength, risk gaps, and role alignment.
+- In `none` and `raw` JD context states, `jdFitScore` is `null`, `jdFitCategories` is empty, and `overallScore` must equal `generalScore`.
+- In the `completed` JD context state, `overallScore` is computed client-side as `round(generalScore * 0.7 + jdFitScore * 0.3)`.
+- The AI may return all score fields, but `review.ts` is responsible for recomputing `overallScore` from the above rules after parsing. This keeps history comparison stable.
+- `verdict` is also derived client-side after score normalization: `ready` for `overallScore >= 80` with no high-priority task tied to a missing hard requirement; `needs_work` for `overallScore >= 60`; `high_risk` for `overallScore < 60` or any high-priority task tied to a missing hard requirement. An AI-returned verdict is advisory and must not override this rule.
 
 ### Technical Rubric
 
@@ -128,7 +136,7 @@ Score relationship rules:
 
 ### JD Fit Rubric
 
-Only apply this rubric when current JD data exists:
+Only apply this rubric in the `completed` JD context state:
 
 - Required requirement coverage: 35.
 - Preferred and bonus requirement coverage: 20.
@@ -136,11 +144,11 @@ Only apply this rubric when current JD data exists:
 - Risk gaps and missing hard requirements: 15.
 - Target-role positioning and keyword alignment: 10.
 
-The JD fit rubric should use existing JD analysis data when present, especially match result score, requirement matches, gaps, strengths, and JD basic info. If JD text exists but match analysis has not been generated, the review service may still pass the raw JD context to the AI, but the UI should label the JD score as based on available JD context rather than completed JD analysis.
+The JD fit rubric must use existing JD analysis data, especially match result score, requirement matches, gaps, strengths, and JD basic info. If JD text exists but match analysis has not been generated, the review service must not produce `jdFitScore`; the UI should tell the user to run JD analysis first.
 
 ### Category Shape
 
-Each category should include:
+Each item in `generalCategories` and `jdFitCategories` should include:
 
 - `key`
 - `label`
@@ -160,6 +168,13 @@ Allowed `relatedModuleKey` values:
 - `projectExperience`
 - `awards`
 - `selfIntro`
+
+Category rollup rules:
+
+- `generalCategories` must contain only the selected role-family rubric categories and roll up to `generalScore`.
+- `jdFitCategories` must contain only JD fit rubric categories and roll up to `jdFitScore`.
+- In `none` and `raw` JD context states, `jdFitCategories` must be an empty list.
+- UI components should render general categories and JD fit categories as separate groups when both exist.
 
 ### Task Shape
 
@@ -236,7 +251,7 @@ The prompt should include:
 - Strict JSON-only output.
 - Exact output schema.
 - Rubric for the detected role family.
-- JD context only when available.
+- JD analysis context only in the `completed` JD context state.
 - Fairness constraints adapted from hiring-agent:
   - ignore name
   - ignore gender
@@ -277,7 +292,7 @@ The UI should follow the current PrepWise workbench style:
 - If AI config is missing, show the existing configuration path.
 - If AI returns invalid JSON, show a readable error and allow retry.
 - If a score is outside its allowed range, clamp it on the client.
-- If JD data is missing, set `jdFitScore` to `null` and do not mark this as an error.
+- If completed JD analysis is missing, set `jdFitScore` to `null`, set `jdFitCategories` to an empty list, and do not mark this as an error.
 - If role detection is uncertain, use the `general` rubric and expose that choice in the UI.
 
 ## Integration With Existing Loop
@@ -286,7 +301,7 @@ The module should connect to existing PrepWise flows:
 
 - Resume editor shortcut opens review page.
 - Review tasks can jump back to resume editor modules through `resumeStore.requestScrollToModule`.
-- If JD analysis exists, include JD fit score and JD-driven risks.
+- If completed JD analysis exists, include JD fit score and JD-driven risks.
 - Later, review tasks can feed existing AI optimization services, but version one only navigates.
 
 ## Validation Plan

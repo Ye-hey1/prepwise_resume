@@ -30,6 +30,7 @@ export interface ResolvedSearchProviderConfig extends SearchProviderConfig {
 export type AiFeature =
   | 'default'
   | 'resumeImport'
+  | 'resumeReview'
   | 'jdAnalysis'
   | 'jdInterview'
   | 'jdCompanyIntel'

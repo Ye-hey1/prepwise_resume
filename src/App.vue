@@ -14,7 +14,7 @@ const route = useRoute()
 const isInterviewRoute = computed(() => route.name === 'ai-interviewer')
 
 // keep-alive 白名单：仅缓存轻量页面，面试页（含 Three.js）不缓存以节省内存
-const keepAliveInclude = ['ResumeEditorView', 'JdAnalysisView', 'QuestionBankView']
+const keepAliveInclude = ['ResumeEditorView', 'ResumeReviewView', 'JdAnalysisView', 'QuestionBankView']
 
 const handleSplashFinish = () => {
   showSplash.value = false

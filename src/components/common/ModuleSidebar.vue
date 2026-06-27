@@ -55,6 +55,13 @@ const primaryMenus = [
       'M15 3H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8Zm0 0v5h5M9 13h6M9 17h4',
   },
   {
+    key: 'resume-review' as const,
+    label: '简历审查',
+    routeName: 'resume-review',
+    iconPath:
+      'M9 11l2 2 4-5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM8 17h8',
+  },
+  {
     key: 'jd-analysis' as const,
     label: 'JD分析',
     routeName: 'jd-analysis',
@@ -84,6 +91,7 @@ const currentThemeOption = computed<{ key: ThemeMode; label: string; icon: strin
 function isMenuActive(menuKey: string): boolean {
   if (menuKey === 'resume-import') return route.name === 'resume-import' || route.path === '/resume-import'
   if (menuKey === 'resume-editor') return route.name === 'resume-editor' || route.path === '/'
+  if (menuKey === 'resume-review') return route.name === 'resume-review' || route.path === '/resume-review'
   if (menuKey === 'ai-interviewer') return route.name === 'ai-interviewer' || route.path === '/interview'
   if (menuKey === 'jd-analysis') return route.name === 'jd-analysis' || route.path === '/jd-analysis'
   if (menuKey === 'question-bank') return route.name === 'question-bank' || route.path === '/question-bank'
@@ -92,6 +100,7 @@ function isMenuActive(menuKey: string): boolean {
 
 function getMenuRoute(menuKey: string) {
   if (menuKey === 'resume-import') return { name: 'resume-import' }
+  if (menuKey === 'resume-review') return { name: 'resume-review' }
   if (menuKey === 'ai-interviewer') return { name: 'ai-interviewer' }
   if (menuKey === 'jd-analysis') return { name: 'jd-analysis' }
   if (menuKey === 'question-bank') return { name: 'question-bank' }

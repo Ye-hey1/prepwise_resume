@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, reactive, ref, watch, type Component } from 'vue'
+import { useRouter } from 'vue-router'
 import { useResumeStore } from '@/stores/resume'
 import { useResumeVersionsStore } from '@/stores/resumeVersions'
 import { getModuleIconPaths, MODULE_ICON_VIEWBOX } from '@/constants/moduleIcons'
 import AiConfigDialog from '@/components/ai/AiConfigDialog.vue'
 import { useAiConfigStore } from '@/stores/aiConfig'
 
+const router = useRouter()
 const store = useResumeStore()
 const versionsStore = useResumeVersionsStore()
 const AiOptimizePanel = defineAsyncComponent(() => import('@/components/ai/AiOptimizePanel.vue'))
@@ -201,6 +203,10 @@ function handleSave() {
   setTimeout(() => {
     showSaved.value = false
   }, 2000)
+}
+
+function goToResumeReview() {
+  router.push({ name: 'resume-review' })
 }
 
 const isAutoSavePending = computed(() => store.nextAutoSaveAt !== null)
@@ -469,6 +475,13 @@ onUnmounted(() => {
             </svg>
             <span class="editor-save-chip-text">{{ autoSaveChipText }}</span>
           </span>
+          <button class="btn-review" type="button" title="AI 简历审查打分" @click="goToResumeReview">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M9 11l2 2 4-5" />
+              <path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z" />
+            </svg>
+            <span>AI 审查</span>
+          </button>
           <button class="btn-save" :class="{ 'btn-save-success': showSaved }" @click="handleSave">
             <transition name="save-icon" mode="out-in">
               <svg v-if="showSaved" key="check" class="save-check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
@@ -1344,6 +1357,33 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   box-shadow: none;
+}
+
+.btn-review {
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border: 1px solid var(--border-color-strong);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--accent-blue-600);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  cursor: pointer;
+}
+
+.btn-review svg {
+  width: 16px;
+  height: 16px;
+}
+
+.btn-review path {
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .btn-save:hover {

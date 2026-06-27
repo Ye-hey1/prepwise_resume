@@ -41,6 +41,7 @@ function formatDate(value: string): string {
         :key="item.id"
         class="history-item"
         :class="{ active: activeId === item.id }"
+        :aria-current="activeId === item.id ? 'true' : undefined"
         type="button"
         @click="emit('open', item.id)"
       >

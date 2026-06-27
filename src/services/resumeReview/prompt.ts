@@ -13,60 +13,68 @@ export const RESUME_REVIEW_SYSTEM_PROMPT = `你是一位资深招聘官和简历
 - 不要编造候选人没有提供的经历、技能、结果或证据。
 - 必须只返回 JSON 对象，不要返回 Markdown、解释文字或代码块。`
 
-const REVIEW_RESULT_SCHEMA_EXAMPLE = {
-  id: 'ai-generated-id-or-empty',
-  generatedAt: 'ISO timestamp or empty',
-  targetRole: '目标岗位',
-  roleFamily: 'technical',
-  jdContextState: 'completed',
-  overallScore: 0,
-  generalScore: 0,
-  jdFitScore: 0,
-  verdict: 'needs_work',
-  summary: '3-5 句话总结简历当前竞争力、主要优势和最关键风险。',
-  generalCategories: [
-    {
-      key: 'project_complexity',
-      label: '项目复杂度与真实影响',
-      score: 20,
-      max: 30,
-      evidence: '简历中可验证的依据。',
-      deductions: '扣分原因。',
-      actionableAdvice: '具体改进建议。',
-      relatedModuleKey: 'projectExperience',
-      missingHardRequirement: false,
-    },
-  ],
-  jdFitCategories: [
-    {
-      key: 'required_coverage',
-      label: '硬性要求覆盖',
-      score: 25,
-      max: 35,
-      evidence: '与结构化 JD 要求相关的简历证据。',
-      deductions: '缺口或风险。',
-      actionableAdvice: '具体补强建议。',
-      relatedModuleKey: 'skills',
-      missingHardRequirement: false,
-    },
-  ],
-  tasks: [
-    {
-      id: 'task-1',
-      priority: 'high',
-      title: '补充某项硬性要求的项目证据',
-      reason: '为什么这会影响筛选结果。',
-      suggestion: '如何修改简历。',
-      relatedModuleKey: 'projectExperience',
-      sourceCategoryKey: 'required_coverage',
-      missingHardRequirement: true,
-    },
-  ],
-  fairnessNotes: '说明本次审查未基于姓名、性别、年龄、学校名气、GPA/成绩、城市/地区评分。',
-}
-
 function formatRubric(rubric: Array<{ key: string; label: string; max: number }>): string {
   return rubric.map((item) => `- ${item.key}（${item.label}）：${item.max} 分`).join('\n')
+}
+
+function buildReviewResultSchemaExample(input: ResumeReviewInput) {
+  const hasCompletedJd = input.jdContextState === 'completed'
+  const generalCategoryKey = input.roleFamily === 'technical' ? 'project_complexity' : 'role_relevance'
+  const generalCategoryLabel = input.roleFamily === 'technical' ? '项目复杂度与真实影响' : '岗位相关经历'
+
+  return {
+    id: '可留空，系统会重新生成',
+    generatedAt: '可留空，系统会重新生成',
+    targetRole: input.targetRole,
+    roleFamily: input.roleFamily,
+    jdContextState: input.jdContextState,
+    overallScore: 0,
+    generalScore: 0,
+    jdFitScore: hasCompletedJd ? 0 : null,
+    verdict: 'needs_work',
+    summary: '3-5 句话总结简历当前竞争力、主要优势和最关键风险。',
+    generalCategories: [
+      {
+        key: generalCategoryKey,
+        label: generalCategoryLabel,
+        score: 20,
+        max: 30,
+        evidence: '简历中可验证的依据。',
+        deductions: '扣分原因。',
+        actionableAdvice: '具体改进建议。',
+        relatedModuleKey: 'projectExperience',
+        missingHardRequirement: false,
+      },
+    ],
+    jdFitCategories: hasCompletedJd
+      ? [
+          {
+            key: 'required_coverage',
+            label: '硬性要求覆盖',
+            score: 25,
+            max: 35,
+            evidence: '与结构化 JD 要求相关的简历证据。',
+            deductions: '缺口或风险。',
+            actionableAdvice: '具体补强建议。',
+            relatedModuleKey: 'skills',
+            missingHardRequirement: false,
+          },
+        ]
+      : [],
+    tasks: [
+      {
+        id: '可留空，系统会重新生成',
+        priority: 'high',
+        title: '补充某项硬性要求的项目证据',
+        reason: '为什么这会影响筛选结果。',
+        suggestion: '如何修改简历。',
+        relatedModuleKey: 'projectExperience',
+        sourceCategoryKey: hasCompletedJd ? 'required_coverage' : generalCategoryKey,
+        missingHardRequirement: hasCompletedJd,
+      },
+    ],
+    fairnessNotes: '说明本次审查未基于姓名、性别、年龄、学校名气、GPA/成绩、城市/地区评分。',
+  }
 }
 
 export function buildResumeReviewPrompt(input: ResumeReviewInput): string {
@@ -117,6 +125,6 @@ export function buildResumeReviewPrompt(input: ResumeReviewInput): string {
     '- 只返回 JSON 对象。',
     '',
     '## JSON Schema 示例',
-    safeJsonStringify(REVIEW_RESULT_SCHEMA_EXAMPLE),
+    safeJsonStringify(buildReviewResultSchemaExample(input)),
   ].join('\n')
 }

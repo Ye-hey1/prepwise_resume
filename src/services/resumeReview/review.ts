@@ -54,6 +54,24 @@ const MODULE_KEY_ALIASES: Record<string, ResumeReviewModuleKey> = {
   introduction: 'selfIntro',
 }
 
+const CATEGORY_MODULE_FALLBACKS: Record<string, ResumeReviewModuleKey> = {
+  project_complexity: 'projectExperience',
+  production_experience: 'workExperience',
+  technical_alignment: 'skills',
+  verifiable_work: 'projectExperience',
+  writing_quality: 'projectExperience',
+  role_relevance: 'workExperience',
+  outcome_evidence: 'projectExperience',
+  capability_structure: 'skills',
+  professional_clarity: 'selfIntro',
+  credibility_risk: 'projectExperience',
+  required_coverage: 'skills',
+  preferred_coverage: 'skills',
+  resume_evidence_strength: 'projectExperience',
+  risk_gaps: 'projectExperience',
+  target_positioning: 'selfIntro',
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -72,12 +90,24 @@ export function clampScore(value: unknown, max = 100): number {
   return Math.min(Math.max(Math.round(numeric), 0), max)
 }
 
-function normalizeModuleKey(value: unknown): ResumeReviewModuleKey {
-  if (typeof value !== 'string') return 'selfIntro'
-  if ((MODULE_KEYS as string[]).includes(value)) return value as ResumeReviewModuleKey
+function generateReviewId(): string {
+  const random = Math.random().toString(36).slice(2, 10)
+  return `review_${Date.now()}_${random}`
+}
 
+function normalizeKnownModuleKey(value: unknown): ResumeReviewModuleKey | null {
+  if (typeof value !== 'string') return null
+  if ((MODULE_KEYS as string[]).includes(value)) return value as ResumeReviewModuleKey
   const normalized = value.replace(/[\s-]/g, '_').toLowerCase()
-  return MODULE_KEY_ALIASES[normalized] ?? 'selfIntro'
+  return MODULE_KEY_ALIASES[normalized] ?? null
+}
+
+function fallbackModuleForCategory(categoryKey: string): ResumeReviewModuleKey {
+  return CATEGORY_MODULE_FALLBACKS[categoryKey] ?? 'projectExperience'
+}
+
+function normalizeModuleKey(value: unknown, fallbackCategoryKey: string): ResumeReviewModuleKey {
+  return normalizeKnownModuleKey(value) ?? fallbackModuleForCategory(fallbackCategoryKey)
 }
 
 function normalizePriority(value: unknown): ReviewPriority {
@@ -97,7 +127,7 @@ function normalizeCategory(raw: unknown, rubric: RubricItem): ReviewCategory {
     evidence: toText(item.evidence),
     deductions: toText(item.deductions),
     actionableAdvice: toText(item.actionableAdvice),
-    relatedModuleKey: normalizeModuleKey(item.relatedModuleKey),
+    relatedModuleKey: normalizeModuleKey(item.relatedModuleKey, rubric.key),
     missingHardRequirement: toBoolean(item.missingHardRequirement),
   }
 }
@@ -129,7 +159,7 @@ function deriveVerdict(overallScore: number, tasks: ReviewTask[]): ReviewVerdict
   return 'needs_work'
 }
 
-function normalizeTask(raw: unknown, index: number): ReviewTask | null {
+function normalizeTask(raw: unknown): Omit<ReviewTask, 'id'> | null {
   if (!isRecord(raw)) return null
 
   const title = toText(raw.title)
@@ -137,14 +167,15 @@ function normalizeTask(raw: unknown, index: number): ReviewTask | null {
   const suggestion = toText(raw.suggestion)
   if (!title && !reason && !suggestion) return null
 
+  const sourceCategoryKey = toText(raw.sourceCategoryKey, 'general')
+
   return {
-    id: toText(raw.id, `task-${index + 1}`),
     priority: normalizePriority(raw.priority),
     title,
     reason,
     suggestion,
-    relatedModuleKey: normalizeModuleKey(raw.relatedModuleKey),
-    sourceCategoryKey: toText(raw.sourceCategoryKey, 'general'),
+    relatedModuleKey: normalizeModuleKey(raw.relatedModuleKey, sourceCategoryKey),
+    sourceCategoryKey,
     missingHardRequirement: toBoolean(raw.missingHardRequirement),
   }
 }
@@ -153,21 +184,13 @@ function normalizeTasks(raw: unknown): ReviewTask[] {
   if (!Array.isArray(raw)) return []
 
   return raw
-    .map((item, index) => normalizeTask(item, index))
-    .filter((item): item is ReviewTask => Boolean(item))
+    .map((item) => normalizeTask(item))
+    .filter((item): item is Omit<ReviewTask, 'id'> => Boolean(item))
     .slice(0, 8)
     .map((task, index) => ({
       ...task,
-      id: task.id || `task-${index + 1}`,
+      id: `task_${index + 1}`,
     }))
-}
-
-function normalizeGeneratedAt(value: unknown): string {
-  if (typeof value === 'string') {
-    const date = new Date(value)
-    if (!Number.isNaN(date.getTime())) return date.toISOString()
-  }
-  return new Date().toISOString()
 }
 
 export function normalizeReviewResult(raw: unknown, input: ResumeReviewInput): ResumeReviewResult {
@@ -187,8 +210,8 @@ export function normalizeReviewResult(raw: unknown, input: ResumeReviewInput): R
     : clampScore(generalScore * 0.7 + jdFitScore * 0.3)
 
   return {
-    id: toText(raw.id, `resume-review-${Date.now()}`),
-    generatedAt: normalizeGeneratedAt(raw.generatedAt),
+    id: generateReviewId(),
+    generatedAt: new Date().toISOString(),
     targetRole: input.targetRole,
     roleFamily: input.roleFamily,
     jdContextState: input.jdContextState,

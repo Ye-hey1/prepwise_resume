@@ -93,7 +93,7 @@ export function buildReviewSignature(prefix: string, value: unknown): string {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === 'object')
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
 }
 
 function toText(value: unknown, fallback = ''): string {
@@ -182,11 +182,27 @@ function normalizeTasks(raw: unknown): ReviewTask[] {
     .filter((item): item is ReviewTask => Boolean(item))
 }
 
-function normalizeResult(raw: unknown): ResumeReviewResult | null {
+function hasMinimumResultShape(raw: Record<string, unknown>): boolean {
+  const hasRequiredArrays = Array.isArray(raw.generalCategories)
+    && Array.isArray(raw.jdFitCategories)
+    && Array.isArray(raw.tasks)
+  const hasReviewContent = typeof raw.summary === 'string'
+    || typeof raw.overallScore === 'number'
+    || typeof raw.generalScore === 'number'
+    || Array.isArray(raw.generalCategories)
+    || Array.isArray(raw.tasks)
+
+  return hasRequiredArrays && hasReviewContent
+}
+
+function normalizeResult(raw: unknown, fallbackId = ''): ResumeReviewResult | null {
   if (!isRecord(raw)) return null
 
+  const id = toText(raw.id, fallbackId).trim()
+  if (!id || !hasMinimumResultShape(raw)) return null
+
   return {
-    id: toText(raw.id),
+    id,
     generatedAt: toText(raw.generatedAt, new Date().toISOString()),
     targetRole: toText(raw.targetRole),
     roleFamily: normalizeRoleFamily(raw.roleFamily),
@@ -208,10 +224,10 @@ function normalizeResult(raw: unknown): ResumeReviewResult | null {
 function normalizeHistoryItem(raw: unknown): ResumeReviewHistoryItem | null {
   if (!isRecord(raw)) return null
 
-  const normalizedResult = normalizeResult(raw.result)
-  const id = typeof raw.id === 'string' && raw.id.trim() ? raw.id : normalizedResult?.id ?? ''
-  const result = normalizedResult && id ? { ...normalizedResult, id } : null
-  if (!id || !result) return null
+  const historyId = typeof raw.id === 'string' && raw.id.trim() ? raw.id : ''
+  const result = normalizeResult(raw.result, historyId)
+  if (!result) return null
+  const id = result.id
 
   return {
     id,

@@ -22,6 +22,15 @@ import {
 
 defineOptions({ name: 'ResumeReviewView' })
 
+type ResumeReviewData = Parameters<typeof formatResumeForReview>[0]
+
+interface JdReviewSnapshot {
+  jdContextState: ReturnType<typeof detectJdContextState>
+  completedJdTitle: string
+  completedTechStack: string[]
+  completedJdContext: CompletedJdReviewContext | null
+}
+
 const router = useRouter()
 const resumeStore = useResumeStore()
 const jdStore = useJdAnalysisStore()
@@ -29,7 +38,7 @@ const aiConfigStore = useAiConfigStore()
 const reviewStore = useResumeReviewStore()
 
 const resumeData = computed(() =>
-  resumeStore.exportToJSON() as Parameters<typeof formatResumeForReview>[0],
+  createResumeSnapshot(),
 )
 
 const resumeText = computed(() => formatResumeForReview(resumeData.value))
@@ -66,14 +75,7 @@ const targetRole = computed(() =>
 )
 
 const completedJdContext = computed<CompletedJdReviewContext | null>(() => {
-  if (jdContextState.value !== 'completed' || !jdStore.jdData || !jdStore.matchResult) return null
-
-  return {
-    jdData: jdStore.jdData,
-    matchResult: jdStore.matchResult,
-    company: jdStore.targetCompany.trim() || jdStore.jdData.basicInfo.company,
-    position: jdStore.targetPosition.trim() || jdStore.jdData.basicInfo.jobTitle,
-  }
+  return createJdSnapshot().completedJdContext
 })
 
 const jdUnlockHint = computed(() => jdContextState.value === 'raw')
@@ -88,24 +90,113 @@ const jdStateLabel = computed(() => {
   return '未使用 JD'
 })
 
-function buildReviewInput(): ResumeReviewInput {
-  const base = {
-    resumeText: resumeText.value,
-    targetRole: targetRole.value,
-    roleFamily: roleFamily.value,
+const activeHistoryItem = computed(() =>
+  reviewStore.history.find((item) => item.id === reviewStore.activeReviewId) ?? null,
+)
+
+const currentResumeSignature = computed(() =>
+  buildReviewSignature('resume', resumeData.value),
+)
+
+const currentJdSignature = computed(() =>
+  completedJdContext.value
+    ? buildReviewSignature('jd', completedJdContext.value)
+    : '',
+)
+
+const isViewingStaleResult = computed(() => {
+  const activeItem = activeHistoryItem.value
+  if (!activeItem) return false
+
+  return activeItem.resumeSignature !== currentResumeSignature.value
+    || activeItem.jdSignature !== currentJdSignature.value
+})
+
+function cloneData<T>(value: T): T {
+  if (value == null) return value
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
+function createResumeSnapshot(): ResumeReviewData {
+  return resumeStore.exportToJSON() as ResumeReviewData
+}
+
+function createJdSnapshot(): JdReviewSnapshot {
+  const jdContextState = detectJdContextState({
+    jdText: jdStore.jdText,
+    jdData: jdStore.jdData,
+    matchResult: jdStore.matchResult,
+  })
+
+  if (jdContextState !== 'completed' || !jdStore.jdData || !jdStore.matchResult) {
+    return {
+      jdContextState,
+      completedJdTitle: '',
+      completedTechStack: [],
+      completedJdContext: null,
+    }
   }
 
-  if (jdContextState.value === 'completed' && completedJdContext.value) {
+  const jdData = cloneData(jdStore.jdData)
+  const matchResult = cloneData(jdStore.matchResult)
+
+  return {
+    jdContextState,
+    completedJdTitle: jdData.basicInfo.jobTitle.trim(),
+    completedTechStack: [...jdData.requirements.techStack],
+    completedJdContext: {
+      jdData,
+      matchResult,
+      company: jdStore.targetCompany.trim() || jdData.basicInfo.company,
+      position: jdStore.targetPosition.trim() || jdData.basicInfo.jobTitle,
+    },
+  }
+}
+
+function resolveTargetRole(resumeSnapshot: ResumeReviewData, jdSnapshot: JdReviewSnapshot): string {
+  const resumeJobTitle = typeof resumeSnapshot.basicInfo?.jobTitle === 'string'
+    ? resumeSnapshot.basicInfo.jobTitle.trim()
+    : ''
+
+  return resumeJobTitle
+    || jdStore.targetPosition.trim()
+    || jdSnapshot.completedJdTitle
+    || '目标岗位未填写'
+}
+
+function resolveRoleFamily(resumeSnapshot: ResumeReviewData, jdSnapshot: JdReviewSnapshot) {
+  const resumeJobTitle = typeof resumeSnapshot.basicInfo?.jobTitle === 'string'
+    ? resumeSnapshot.basicInfo.jobTitle
+    : ''
+
+  return detectRoleFamily({
+    jobTitle: resumeJobTitle,
+    jdPosition: jdStore.targetPosition || jdSnapshot.completedJdTitle,
+    techStack: jdSnapshot.completedTechStack,
+  })
+}
+
+function buildReviewInput(
+  resumeSnapshot: ResumeReviewData,
+  jdSnapshot: JdReviewSnapshot,
+): ResumeReviewInput {
+  const base = {
+    resumeText: formatResumeForReview(resumeSnapshot),
+    targetRole: resolveTargetRole(resumeSnapshot, jdSnapshot),
+    roleFamily: resolveRoleFamily(resumeSnapshot, jdSnapshot),
+  }
+
+  if (jdSnapshot.jdContextState === 'completed' && jdSnapshot.completedJdContext) {
     return {
       ...base,
       jdContextState: 'completed',
-      completedJdContext: completedJdContext.value,
+      completedJdContext: jdSnapshot.completedJdContext,
     }
   }
 
   return {
     ...base,
-    jdContextState: jdContextState.value === 'raw' ? 'raw' : 'none',
+    jdContextState: jdSnapshot.jdContextState === 'raw' ? 'raw' : 'none',
     completedJdContext: null,
   }
 }
@@ -113,7 +204,10 @@ function buildReviewInput(): ResumeReviewInput {
 async function startReview() {
   if (reviewStore.isLoading) return
 
-  if (!hasEnoughResumeContent(resumeData.value)) {
+  const resumeSnapshot = createResumeSnapshot()
+  const jdSnapshot = createJdSnapshot()
+
+  if (!hasEnoughResumeContent(resumeSnapshot)) {
     reviewStore.setError('简历内容太少，请至少补充基本信息，并填写技能、项目或工作经历之一。')
     return
   }
@@ -126,13 +220,15 @@ async function startReview() {
   reviewStore.setLoading(true)
 
   try {
-    const input = buildReviewInput()
+    const input = buildReviewInput(resumeSnapshot, jdSnapshot)
+    const resumeSignature = buildReviewSignature('resume', resumeSnapshot)
+    const jdSignature = input.jdContextState === 'completed'
+      ? buildReviewSignature('jd', input.completedJdContext)
+      : ''
     const result = await reviewResume(config.value, input)
     reviewStore.saveResult(result, {
-      resumeSignature: buildReviewSignature('resume', resumeData.value),
-      jdSignature: input.jdContextState === 'completed'
-        ? buildReviewSignature('jd', input.completedJdContext)
-        : '',
+      resumeSignature,
+      jdSignature,
     })
   } catch (error) {
     reviewStore.setError(error instanceof Error ? error.message : '简历审查失败，请稍后重试。')
@@ -181,6 +277,10 @@ function openModule(moduleKey: ResumeReviewModuleKey) {
           {{ reviewStore.isLoading ? '审查中...' : hasResult ? '重新审查' : '开始审查' }}
         </button>
       </section>
+
+      <p v-if="isViewingStaleResult" class="stale-message" role="status">
+        当前显示的是历史审查结果，简历或 JD 已变化，建议重新审查。
+      </p>
 
       <p v-if="reviewStore.errorMsg" class="error-message" role="alert">
         {{ reviewStore.errorMsg }}
@@ -325,6 +425,19 @@ function openModule(moduleKey: ResumeReviewModuleKey) {
   border-radius: 8px;
   background: rgba(216, 80, 80, 0.08);
   color: var(--accent-red);
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.stale-message {
+  margin: 0;
+  padding: 9px 12px;
+  border: 1px solid rgba(224, 138, 58, 0.28);
+  border-radius: 8px;
+  background: rgba(224, 138, 58, 0.08);
+  color: var(--accent-orange);
   font-size: 13px;
   font-weight: 750;
   line-height: 1.55;

@@ -1,3 +1,5 @@
+import type { JDData, JDMatchResult } from '../types/jd'
+
 export type RoleFamily = 'technical' | 'general'
 export type JdContextState = 'none' | 'raw' | 'completed'
 export type ReviewVerdict = 'ready' | 'needs_work' | 'high_risk'
@@ -53,16 +55,24 @@ export interface ResumeReviewResult {
 }
 
 export interface CompletedJdReviewContext {
-  jdData: unknown
-  matchResult: unknown
+  jdData: JDData
+  matchResult: JDMatchResult
   company: string
   position: string
 }
 
-export interface ResumeReviewInput {
+interface BaseResumeReviewInput {
   resumeText: string
   targetRole: string
   roleFamily: RoleFamily
-  jdContextState: JdContextState
-  completedJdContext: CompletedJdReviewContext | null
 }
+
+export type ResumeReviewInput =
+  | (BaseResumeReviewInput & {
+      jdContextState: 'none' | 'raw'
+      completedJdContext: null
+    })
+  | (BaseResumeReviewInput & {
+      jdContextState: 'completed'
+      completedJdContext: CompletedJdReviewContext
+    })

@@ -66,6 +66,26 @@ const TECHNICAL_KEYWORDS = [
   '架构',
 ]
 
+function isChineseKeyword(keyword: string): boolean {
+  return /[\u4e00-\u9fff]/.test(keyword)
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function isLatinKeywordMatch(text: string, keyword: string): boolean {
+  const pattern = keyword.trim().split(/\s+/).map(escapeRegExp).join('\\s+')
+  return new RegExp(`(^|[^a-z0-9])${pattern}(?=$|[^a-z0-9])`, 'i').test(text)
+}
+
+function isTechnicalKeywordMatch(text: string, keyword: string): boolean {
+  const normalizedKeyword = keyword.toLowerCase()
+  return isChineseKeyword(normalizedKeyword)
+    ? text.includes(normalizedKeyword)
+    : isLatinKeywordMatch(text, normalizedKeyword)
+}
+
 export function detectRoleFamily(input: {
   jobTitle?: string
   jdPosition?: string
@@ -75,9 +95,7 @@ export function detectRoleFamily(input: {
     .filter(Boolean)
     .join(' ')
     .toLowerCase()
-  return TECHNICAL_KEYWORDS.some((keyword) =>
-    text.includes(keyword.toLowerCase()),
-  )
+  return TECHNICAL_KEYWORDS.some((keyword) => isTechnicalKeywordMatch(text, keyword))
     ? 'technical'
     : 'general'
 }

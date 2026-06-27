@@ -292,27 +292,46 @@ function section(title: string, content: string): string {
   return content.trim() ? `## ${title}\n${content.trim()}` : ''
 }
 
+function labeled(label: string, value: unknown): string {
+  const content = text(value)
+  return content ? `${label}：${content}` : ''
+}
+
+function compact(values: unknown[], separator = ' '): string {
+  return values.map(text).filter(Boolean).join(separator)
+}
+
+function dateRange(start: unknown, end: unknown): string {
+  const range = compact([start, end], '-')
+  return range ? `时间：${range}` : ''
+}
+
+function heading(values: string[]): string {
+  const content = values.filter(Boolean).join(' | ')
+  return content ? `### ${content}` : ''
+}
+
 export function formatResumeForReview(data: ResumeReviewSourceData): string {
   const basic = data.basicInfo ?? {}
   const parts: string[] = []
 
   parts.push(section('基本信息', [
-    `姓名：${text(basic.name)}`,
-    `目标岗位：${text(basic.jobTitle)}`,
-    `最高学历：${text(basic.educationLevel)}`,
-    `工作年限：${text(basic.workYears)}`,
-    `所在地：${text(basic.location)}`,
-    `个人网站：${text(basic.website)}`,
-    `GitHub：${text(basic.github)}`,
-    `博客：${text(basic.blog)}`,
-  ].filter((line) => !line.endsWith('：')).join('\n')))
+    labeled('姓名', basic.name),
+    labeled('目标岗位', basic.jobTitle),
+    labeled('最高学历', basic.educationLevel),
+    labeled('工作年限', basic.workYears),
+    labeled('所在地', basic.location),
+    labeled('个人网站', basic.website),
+    labeled('GitHub', basic.github),
+    labeled('博客', basic.blog),
+  ].filter(Boolean).join('\n')))
 
   const educationItems = (data.educationList ?? []).filter((item) =>
-    text(item.school) || text(item.college) || text(item.major) || text(item.degree) || text(item.description)
+    compact([item.school, item.college, item.major, item.degree, item.startDate, item.endDate, item.description])
   )
   const education = educationItems.map((item) => [
-    `- 学校：${text(item.school)} ${text(item.college)} ${text(item.major)}`,
-    `  学位：${text(item.degree)} 时间：${text(item.startDate)}-${text(item.endDate)}`,
+    compact([item.school, item.college, item.major]) ? `- 学校：${compact([item.school, item.college, item.major])}` : '',
+    compact([labeled('学位', item.degree), dateRange(item.startDate, item.endDate)], ' '),
     text(item.description) ? `  描述：${stripHtml(text(item.description))}` : '',
   ].filter(Boolean).join('\n')).join('\n')
   parts.push(section('教育经历', education))
@@ -320,28 +339,31 @@ export function formatResumeForReview(data: ResumeReviewSourceData): string {
   parts.push(section('专业技能', stripHtml(data.skills ?? '')))
 
   const workItems = (data.workList ?? []).filter((item) =>
-    text(item.company) || text(item.position) || text(item.department) || text(item.description)
+    compact([item.company, item.position, item.department, item.startDate, item.endDate, item.description])
   )
   const work = workItems.map((item) => [
-    `### ${text(item.company)} | ${text(item.position)} | ${text(item.startDate)}-${text(item.endDate)}`,
-    text(item.department) ? `部门：${text(item.department)}` : '',
+    heading([text(item.company), text(item.position), dateRange(item.startDate, item.endDate)]),
+    labeled('部门', item.department),
     text(item.description) ? stripHtml(text(item.description)) : '',
   ].filter(Boolean).join('\n')).join('\n\n')
   parts.push(section('工作经历', work))
 
   const projectItems = (data.projectList ?? []).filter((item) =>
-    text(item.name) || text(item.role) || text(item.link) || text(item.introduction) || text(item.mainWork)
+    compact([item.name, item.role, item.startDate, item.endDate, item.link, item.introduction, item.mainWork])
   )
   const projects = projectItems.map((item) => [
-    `### ${text(item.name)} | ${text(item.role)} | ${text(item.startDate)}-${text(item.endDate)}`,
-    text(item.link) ? `链接：${text(item.link)}` : '',
+    heading([text(item.name), text(item.role), dateRange(item.startDate, item.endDate)]),
+    labeled('链接', item.link),
     text(item.introduction) ? `项目介绍：${stripHtml(text(item.introduction))}` : '',
     text(item.mainWork) ? `主要工作：${stripHtml(text(item.mainWork))}` : '',
   ].filter(Boolean).join('\n')).join('\n\n')
   parts.push(section('项目经历', projects))
 
-  const awards = (data.awardList ?? []).map((item) => [
-    `- ${text(item.name)} | ${text(item.date)}`,
+  const awardItems = (data.awardList ?? []).filter((item) =>
+    compact([item.name, item.date, item.description])
+  )
+  const awards = awardItems.map((item) => [
+    compact([text(item.name), text(item.date)], ' | ') ? `- ${compact([text(item.name), text(item.date)], ' | ')}` : '',
     text(item.description) ? stripHtml(text(item.description)) : '',
   ].filter(Boolean).join(' | ')).join('\n')
   parts.push(section('荣誉奖项', awards))
@@ -1083,12 +1105,18 @@ const jdContextState = computed(() => detectJdContextState({
   jdData: jdStore.jdData,
   matchResult: jdStore.matchResult,
 }))
+const completedJdTitle = computed(() =>
+  jdContextState.value === 'completed' ? jdStore.jdData?.basicInfo.jobTitle : ''
+)
+const completedTechStack = computed(() =>
+  jdContextState.value === 'completed' ? jdStore.jdData?.requirements.techStack : []
+)
 const roleFamily = computed(() => detectRoleFamily({
   jobTitle: resumeStore.basicInfo.jobTitle,
-  jdPosition: jdStore.targetPosition || jdStore.jdData?.basicInfo.jobTitle,
-  techStack: jdStore.jdData?.requirements.techStack,
+  jdPosition: jdStore.targetPosition || completedJdTitle.value,
+  techStack: completedTechStack.value,
 }))
-const targetRole = computed(() => resumeStore.basicInfo.jobTitle || jdStore.targetPosition || jdStore.jdData?.basicInfo.jobTitle || '')
+const targetRole = computed(() => resumeStore.basicInfo.jobTitle || jdStore.targetPosition || completedJdTitle.value || '')
 const completedJdContext = computed<CompletedJdReviewContext | null>(() => {
   if (jdContextState.value !== 'completed' || !jdStore.jdData || !jdStore.matchResult) return null
   return {

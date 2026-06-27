@@ -307,7 +307,10 @@ export function formatResumeForReview(data: ResumeReviewSourceData): string {
     `博客：${text(basic.blog)}`,
   ].filter((line) => !line.endsWith('：')).join('\n')))
 
-  const education = (data.educationList ?? []).map((item) => [
+  const educationItems = (data.educationList ?? []).filter((item) =>
+    text(item.school) || text(item.college) || text(item.major) || text(item.degree) || text(item.description)
+  )
+  const education = educationItems.map((item) => [
     `- 学校：${text(item.school)} ${text(item.college)} ${text(item.major)}`,
     `  学位：${text(item.degree)} 时间：${text(item.startDate)}-${text(item.endDate)}`,
     text(item.description) ? `  描述：${stripHtml(text(item.description))}` : '',
@@ -316,14 +319,20 @@ export function formatResumeForReview(data: ResumeReviewSourceData): string {
 
   parts.push(section('专业技能', stripHtml(data.skills ?? '')))
 
-  const work = (data.workList ?? []).map((item) => [
+  const workItems = (data.workList ?? []).filter((item) =>
+    text(item.company) || text(item.position) || text(item.department) || text(item.description)
+  )
+  const work = workItems.map((item) => [
     `### ${text(item.company)} | ${text(item.position)} | ${text(item.startDate)}-${text(item.endDate)}`,
     text(item.department) ? `部门：${text(item.department)}` : '',
     text(item.description) ? stripHtml(text(item.description)) : '',
   ].filter(Boolean).join('\n')).join('\n\n')
   parts.push(section('工作经历', work))
 
-  const projects = (data.projectList ?? []).map((item) => [
+  const projectItems = (data.projectList ?? []).filter((item) =>
+    text(item.name) || text(item.role) || text(item.link) || text(item.introduction) || text(item.mainWork)
+  )
+  const projects = projectItems.map((item) => [
     `### ${text(item.name)} | ${text(item.role)} | ${text(item.startDate)}-${text(item.endDate)}`,
     text(item.link) ? `链接：${text(item.link)}` : '',
     text(item.introduction) ? `项目介绍：${stripHtml(text(item.introduction))}` : '',
@@ -401,6 +410,7 @@ Create `src/services/resumeReview/prompt.ts`.
 
 ```ts
 import { safeJsonStringify } from '@/services/stream'
+import { formatCompletedJdContext } from './formatResume'
 import { JD_FIT_RUBRIC, getRoleRubric } from './rubrics'
 import type { ResumeReviewInput } from './types'
 
@@ -414,6 +424,7 @@ export const RESUME_REVIEW_SYSTEM_PROMPT = `你是资深招聘官和简历审查
 export function buildResumeReviewPrompt(input: ResumeReviewInput): string {
   const roleRubric = getRoleRubric(input.roleFamily)
   const wantsJdFit = input.jdContextState === 'completed'
+  const completedJdText = wantsJdFit ? formatCompletedJdContext(input.completedJdContext) : ''
   const schema = {
     overallScore: 0,
     generalScore: 0,
@@ -484,7 +495,7 @@ ${safeJsonStringify(schema)}
 简历内容：
 ${input.resumeText}
 
-${wantsJdFit && input.completedJdContext ? `已完成 JD 分析上下文：\n${safeJsonStringify(input.completedJdContext)}` : ''}`
+${completedJdText ? `已完成 JD 分析上下文：\n${completedJdText}` : ''}`
 }
 ```
 
@@ -999,7 +1010,11 @@ function formatDate(value: string) {
     >
       <span>{{ formatDate(item.generatedAt) }}</span>
       <strong>{{ item.result.overallScore }}</strong>
-      <small>{{ item.targetRole || '未填写岗位' }}</small>
+      <small>{{ item.targetRole || '未填写岗位' }} · {{ item.result.roleFamily }}</small>
+      <small>
+        通用 {{ item.result.generalScore }}
+        <template v-if="item.result.jdFitScore !== null"> · JD {{ item.result.jdFitScore }}</template>
+      </small>
     </button>
   </aside>
 </template>
@@ -1070,10 +1085,10 @@ const jdContextState = computed(() => detectJdContextState({
 }))
 const roleFamily = computed(() => detectRoleFamily({
   jobTitle: resumeStore.basicInfo.jobTitle,
-  jdPosition: jdStore.jdData?.basicInfo.jobTitle,
+  jdPosition: jdStore.targetPosition || jdStore.jdData?.basicInfo.jobTitle,
   techStack: jdStore.jdData?.requirements.techStack,
 }))
-const targetRole = computed(() => resumeStore.basicInfo.jobTitle || jdStore.jdData?.basicInfo.jobTitle || '')
+const targetRole = computed(() => resumeStore.basicInfo.jobTitle || jdStore.targetPosition || jdStore.jdData?.basicInfo.jobTitle || '')
 const completedJdContext = computed<CompletedJdReviewContext | null>(() => {
   if (jdContextState.value !== 'completed' || !jdStore.jdData || !jdStore.matchResult) return null
   return {

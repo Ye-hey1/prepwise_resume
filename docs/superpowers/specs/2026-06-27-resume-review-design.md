@@ -102,6 +102,14 @@ Top-level fields:
 - `tasks`: actionable optimization task list.
 - `fairnessNotes`: short note confirming excluded factors.
 
+Score relationship rules:
+
+- `generalScore` is always produced from the selected role-family rubric.
+- `jdFitScore` is produced only when JD data exists. It uses a separate JD fit rubric based on the current JD analysis result, including requirement coverage, evidence strength, risk gaps, and role alignment.
+- When no JD data exists, `jdFitScore` is `null` and `overallScore` must equal `generalScore`.
+- When JD data exists, `overallScore` is computed client-side as `round(generalScore * 0.7 + jdFitScore * 0.3)`.
+- The AI may return all three fields, but `review.ts` is responsible for recomputing `overallScore` from the above rules after parsing. This keeps history comparison stable.
+
 ### Technical Rubric
 
 - Project complexity and real impact: 30.
@@ -117,6 +125,18 @@ Top-level fields:
 - Capability structure completeness: 20.
 - Clarity and professional expression: 15.
 - Risk and credibility signals: 10.
+
+### JD Fit Rubric
+
+Only apply this rubric when current JD data exists:
+
+- Required requirement coverage: 35.
+- Preferred and bonus requirement coverage: 20.
+- Evidence strength in resume text: 20.
+- Risk gaps and missing hard requirements: 15.
+- Target-role positioning and keyword alignment: 10.
+
+The JD fit rubric should use existing JD analysis data when present, especially match result score, requirement matches, gaps, strengths, and JD basic info. If JD text exists but match analysis has not been generated, the review service may still pass the raw JD context to the AI, but the UI should label the JD score as based on available JD context rather than completed JD analysis.
 
 ### Category Shape
 
@@ -182,6 +202,8 @@ Each history item stores:
 
 Do not store AI keys or provider secrets.
 
+The version-one history panel is a compact prior-results list only. It should show timestamp, target role, role family, overall score, general score, and JD fit score if present. It does not need a full side-by-side comparison workflow in version one.
+
 ## AI Service Design
 
 Add `src/services/resumeReview/`:
@@ -239,6 +261,8 @@ Add `src/components/resumeReview/`:
 - `ReviewEvidencePanel.vue`: optional detail area for evidence and scoring notes.
 
 Add `src/views/ResumeReviewView.vue` as the orchestration view.
+
+For version one, `ReviewEvidencePanel.vue` should not be built as a separate component unless the page becomes too large during implementation. Evidence and deductions can live inside `ReviewCategoryList.vue`; the separate evidence panel is a deferred extraction point, not a required first-version file.
 
 The UI should follow the current PrepWise workbench style:
 

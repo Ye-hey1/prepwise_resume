@@ -7,7 +7,7 @@ import type { Router } from 'vue-router'
 import { toast } from '@/utils/toast'
 
 /** 需要 AI 配置的路由 */
-const AI_REQUIRED_ROUTES = new Set(['ai-interviewer', 'jd-analysis'])
+const AI_REQUIRED_ROUTES = new Set(['ai-interviewer', 'jd-analysis', 'resume-review'])
 
 /** 需要简历数据的路由 */
 const RESUME_REQUIRED_ROUTES = new Set(['jd-analysis'])

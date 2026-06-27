@@ -64,7 +64,7 @@ function closeMobileMenu() {
       <main class="main-content" :class="{ 'main-content--interview': isInterviewRoute }">
         <RouterView v-slot="{ Component, route }">
           <transition name="page" mode="out-in">
-            <keep-alive :include="keepAliveInclude" :max="3">
+            <keep-alive :include="keepAliveInclude" :max="4">
               <component :is="Component" :key="route.path" />
             </keep-alive>
           </transition>

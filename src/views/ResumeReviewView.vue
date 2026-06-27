@@ -110,6 +110,9 @@ const isViewingStaleResult = computed(() => {
 
   return activeItem.resumeSignature !== currentResumeSignature.value
     || activeItem.jdSignature !== currentJdSignature.value
+    || activeItem.result.targetRole !== targetRole.value
+    || activeItem.result.roleFamily !== roleFamily.value
+    || activeItem.result.jdContextState !== jdContextState.value
 })
 
 function cloneData<T>(value: T): T {

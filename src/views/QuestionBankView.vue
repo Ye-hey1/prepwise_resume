@@ -5,24 +5,36 @@ import AddQuestionDialog from '@/components/questionBank/AddQuestionDialog.vue'
 import AiGenerateDialog from '@/components/questionBank/AiGenerateDialog.vue'
 import RealExperienceDialog from '@/components/questionBank/RealExperienceDialog.vue'
 import SourceBadge from '@/components/questionBank/SourceBadge.vue'
+// 技术自测组件
+import QuizSetupPanel from '@/components/interview/QuizSetupPanel.vue'
+import QuizSessionView from '@/components/interview/QuizSessionView.vue'
+import QuizResultPanel from '@/components/interview/QuizResultPanel.vue'
 
 defineOptions({ name: 'QuestionBankView' })
 import { useQuestionBankStore, type SavedQuestion } from '@/stores/questionBank'
 import { useAiConfigStore } from '@/stores/aiConfig'
 import { useResumeStore } from '@/stores/resume'
+import { useInterviewQuizStore, type QuizSessionConfig } from '@/stores/interviewQuiz'
 import { nonStreamAIRequest } from '@/services/stream'
 
 type MasteryFilter = 'all' | 'unpracticed' | 'weak' | 'ready'
 type SortMode = 'newest' | 'weak-first' | 'mastery-desc'
 type SourceFilter = 'all' | 'ai_generated' | 'real_experience' | 'jd_analysis'
+type ViewTab = 'questions' | 'quiz-setup' | 'quiz-session' | 'quiz-result'
 
 const DRILL_SEED_STORAGE_KEY = 'prepwise_question_bank_drill_seed'
 
 const qbStore = useQuestionBankStore()
 const aiConfigStore = useAiConfigStore()
 const resumeStore = useResumeStore()
+const quizStore = useInterviewQuizStore()
 const router = useRouter()
 
+// Tab 切换状态
+const activeTab = ref<ViewTab>('questions')
+const currentQuizSessionId = ref<string | null>(null)
+
+// 题库相关状态
 const showAddDialog = ref(false)
 const showAiDialog = ref(false)
 const showRealExperienceDialog = ref(false)
@@ -61,6 +73,7 @@ const sortOptions: Array<{ value: SortMode; label: string }> = [
   { value: 'mastery-desc', label: '掌握优先' },
 ]
 
+// 题库相关计算属性和方法
 const pureQuestions = computed(() =>
   qbStore.questions.filter((question) => !isInterviewExperienceImport(question)),
 )
@@ -90,7 +103,7 @@ const filteredQuestions = computed(() => {
   if (sourceFilter.value !== 'all') {
     list = list.filter((item) => {
       if (sourceFilter.value === 'real_experience') {
-        return item.source_type === 'real_experience' || 
+        return item.source_type === 'real_experience' ||
                item.tags?.includes('real_experience') ||
                item.source === 'InterviewRadar'
       }
@@ -109,9 +122,9 @@ const filteredQuestions = computed(() => {
         item.reference_answer,
         ...(item.tags ?? []),
       ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
 
       return haystack.includes(keyword)
     })
@@ -125,8 +138,8 @@ const stats = computed(() => {
   const practiced = all.filter((item) => (item.mastery_level ?? 0) > 0).length
   const needsPractice = all.filter((item) => (item.mastery_level ?? 0) <= 2).length
   const withReference = all.filter((item) => Boolean(item.reference_answer?.trim())).length
-  const realExperience = all.filter((item) => 
-    item.source_type === 'real_experience' || 
+  const realExperience = all.filter((item) =>
+    item.source_type === 'real_experience' ||
     item.tags?.includes('real_experience') ||
     item.source === 'InterviewRadar'
   ).length
@@ -277,7 +290,6 @@ async function handleGenerateAnswer() {
   generatingAnswer.value = true
 
   try {
-    // 构建简历上下文
     const resumeContext = [
       resumeStore.basicInfo.jobTitle ? `目标岗位：${resumeStore.basicInfo.jobTitle}` : '',
       resumeStore.basicInfo.workYears ? `工作年限：${resumeStore.basicInfo.workYears}` : '',
@@ -339,6 +351,44 @@ async function saveAnswer() {
   savingAnswer.value = false
 }
 
+// 技术自测相关函数
+function startQuiz(config: QuizSessionConfig) {
+  const session = quizStore.createSession(config)
+  currentQuizSessionId.value = session.id
+  activeTab.value = 'quiz-session'
+}
+
+function completeQuiz() {
+  activeTab.value = 'quiz-result'
+}
+
+function exitQuiz() {
+  activeTab.value = 'questions'
+}
+
+function viewQuizResult(sessionId: string) {
+  currentQuizSessionId.value = sessionId
+  activeTab.value = 'quiz-result'
+}
+
+function restartQuizSession(sessionId: string) {
+  quizStore.restartSession(sessionId)
+  if (quizStore.currentSession) {
+    currentQuizSessionId.value = quizStore.currentSession.id
+    activeTab.value = 'quiz-session'
+  }
+}
+
+function newQuiz() {
+  currentQuizSessionId.value = null
+  activeTab.value = 'quiz-setup'
+}
+
+function viewQuizHistory() {
+  activeTab.value = 'quiz-result'
+  currentQuizSessionId.value = quizStore.sessions[0]?.id || null
+}
+
 onMounted(() => {
   void qbStore.fetchQuestions()
 })
@@ -347,12 +397,41 @@ onMounted(() => {
 <template>
   <div class="qb-page">
     <header class="qb-header">
-      <div class="header-copy">
-        <h1>面试题库</h1>
-        <p>沉淀可直接练习的单道面试问题。</p>
+      <div class="header-left">
+        <div class="header-copy">
+          <h1>面试题库 & 自测</h1>
+          <p>沉淀题库、技术自测，系统化提升面试能力</p>
+        </div>
+
+        <!-- Tab 切换 -->
+        <div class="tab-switcher">
+          <button
+            type="button"
+            class="tab-btn"
+            :class="{ active: activeTab === 'questions' }"
+            @click="activeTab = 'questions'"
+          >
+            <span class="tab-icon">📚</span>
+            我的题库
+            <span class="tab-count">{{ stats.total }}</span>
+          </button>
+          <button
+            type="button"
+            class="tab-btn"
+            :class="{ active: activeTab === 'quiz-setup' || activeTab === 'quiz-session' || activeTab === 'quiz-result' }"
+            @click="activeTab = 'quiz-setup'"
+          >
+            <span class="tab-icon">🎯</span>
+            技术自测
+            <span v-if="quizStore.globalStats.totalAnswered > 0" class="tab-badge">
+              {{ quizStore.globalStats.totalAnswered }}
+            </span>
+          </button>
+        </div>
       </div>
 
-      <div class="header-actions">
+      <!-- 题库操作按钮 -->
+      <div class="header-actions" v-if="activeTab === 'questions'">
         <button class="action-btn secondary" type="button" @click="showAiDialog = true">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 3v4" />
@@ -384,9 +463,32 @@ onMounted(() => {
           添加题目
         </button>
       </div>
+
+      <!-- 技术自测操作按钮 -->
+      <div class="header-actions" v-else-if="activeTab === 'quiz-result'">
+        <button class="action-btn secondary" type="button" @click="newQuiz">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+          新建自测
+        </button>
+        <button class="action-btn secondary" type="button" @click="viewQuizHistory" v-if="quizStore.sessions.length > 1">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 3v5h5M12 8l-4-4-4 4M21 21v-5h-5M12 16l4 4 4-4" />
+          </svg>
+          历史记录
+        </button>
+        <button class="action-btn secondary" type="button" @click="activeTab = 'quiz-setup'">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M11 17l2-2-2-2M3 12l2 2 2-2m10-6l2 2 2-2" />
+          </svg>
+          返回配置
+        </button>
+      </div>
     </header>
 
-    <section class="stat-strip" aria-label="题库统计">
+    <!-- 题库统计条 -->
+    <section v-if="activeTab === 'questions'" class="stat-strip" aria-label="题库统计">
       <span>全部 <strong>{{ stats.total }}</strong></span>
       <span>待练 <strong>{{ stats.needsPractice }}</strong></span>
       <span>已练 <strong>{{ stats.practiced }}</strong></span>
@@ -395,7 +497,16 @@ onMounted(() => {
       <span>可追溯 <strong>{{ stats.grounded }}</strong></span>
     </section>
 
-    <section class="toolbar">
+    <!-- 技术自测统计条 -->
+    <section v-else class="stat-strip quiz-stats">
+      <span>总答题 <strong>{{ quizStore.globalStats.totalAnswered }}</strong></span>
+      <span>正确率 <strong>{{ quizStore.globalStats.accuracy }}%</strong></span>
+      <span>平均用时 <strong>{{ Math.round(quizStore.globalStats.avgTimeSpent / 60) }}分钟</strong></span>
+      <span>自测次数 <strong>{{ quizStore.sessions.length }}</strong></span>
+    </section>
+
+    <!-- 题库筛选栏 -->
+    <section v-if="activeTab === 'questions'" class="toolbar">
       <div class="search-box">
         <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="11" cy="11" r="8" />
@@ -446,105 +557,167 @@ onMounted(() => {
       </button>
     </section>
 
-    <main class="question-area custom-scroll">
-      <div v-if="qbStore.isLoading" class="state-box">
-        <div class="loading-spinner"></div>
-        <h3>正在加载题库</h3>
-        <p>请稍等。</p>
-      </div>
-
-      <div v-else-if="qbStore.errorMsg" class="state-box error">
-        <h3>题库加载失败</h3>
-        <p>{{ qbStore.errorMsg }}</p>
-        <button class="outline-btn" type="button" @click="qbStore.fetchQuestions()">重新加载</button>
-      </div>
-
-      <template v-else>
-        <div v-if="filteredQuestions.length === 0" class="state-box empty">
-          <h3>{{ pureQuestions.length ? '没有匹配的题目' : '题库暂无题目' }}</h3>
-          <p>{{ pureQuestions.length ? '调整筛选条件后再查看。' : '通过以下方式快速填充你的面试题库：' }}</p>
-
-          <!-- 筛选无结果时 -->
-          <div v-if="pureQuestions.length" class="empty-actions">
-            <button class="outline-btn" type="button" @click="resetFilters">清空筛选</button>
-          </div>
-
-          <!-- 题库为空时的引导卡片 -->
-          <div v-else class="empty-guide-grid">
-            <div class="guide-card" @click="$router.push({ name: 'jd-analysis' })">
-              <div class="guide-icon guide-icon--jd">
-                <svg viewBox="0 0 24 24" fill="none" width="20" height="20"><path d="M21 6H3a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2Z" stroke="currentColor" stroke-width="1.5" /></svg>
-              </div>
-              <h4>从 JD 分析生成</h4>
-              <p>粘贴目标岗位 JD，AI 自动生成针对性面试题</p>
-            </div>
-            <div class="guide-card" @click="showAiDialog = true">
-              <div class="guide-icon guide-icon--ai">
-                <svg viewBox="0 0 24 24" fill="none" width="20" height="20"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3L12 3Z" stroke="currentColor" stroke-width="1.5" /></svg>
-              </div>
-              <h4>AI 智能生成</h4>
-              <p>输入岗位方向，AI 生成常见面试题和参考答案</p>
-            </div>
-            <div class="guide-card" @click="showAddDialog = true">
-              <div class="guide-icon guide-icon--add">
-                <svg viewBox="0 0 24 24" fill="none" width="20" height="20"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
-              </div>
-              <h4>手动添加</h4>
-              <p>记录面试中遇到的真题，积累个人题库</p>
-            </div>
-          </div>
+    <main class="main-content custom-scroll">
+      <!-- 我的题库内容 -->
+      <template v-if="activeTab === 'questions'">
+        <div v-if="qbStore.isLoading" class="state-box">
+          <div class="loading-spinner"></div>
+          <h3>正在加载题库</h3>
+          <p>请稍等。</p>
         </div>
 
-        <div v-else class="question-grid">
-          <article v-for="question in filteredQuestions" :key="question.id ?? question.content" class="question-card">
-            <!-- 悬停时显示的删除图标 -->
-            <button
-              class="card-delete-btn"
-              type="button"
-              title="删除题目"
-              @click.stop="deleteQuestion(question)"
-            >
-              <svg viewBox="0 0 24 24" fill="none" width="15" height="15">
-                <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            </button>
-
-            <div class="card-head">
-              <span class="category-pill">{{ question.category || '未分类' }}</span>
-              <span class="meta-pill">{{ masteryLabel(question.mastery_level) }}</span>
-            </div>
-
-            <h2>{{ question.content }}</h2>
-
-            <div class="card-meta">
-              <span>{{ formatDate(question.created_at) }}</span>
-              <span v-if="question.reference_answer">有参考答案</span>
-              <span v-if="question.focus_area">{{ question.focus_area }}</span>
-            </div>
-
-            <div class="tag-row">
-              <span v-for="tag in question.tags?.slice(0, 5)" :key="tag" class="tag-pill">#{{ tag }}</span>
-              <span v-if="!question.tags?.length" class="tag-pill muted">未标注标签</span>
-            </div>
-
-            <div class="source-row">
-              <SourceBadge
-                :source-type="question.source_type"
-                :source-url="question.source_url"
-                :is-grounded="question.is_grounded"
-                :resume-anchor="question.resume_anchor"
-              />
-            </div>
-
-            <footer class="card-actions">
-              <button class="card-btn" type="button" @click="openQuestion(question)">查看</button>
-              <button class="card-btn primary" type="button" @click="startPractice([question])">练习</button>
-            </footer>
-          </article>
+        <div v-else-if="qbStore.errorMsg" class="state-box error">
+          <h3>题库加载失败</h3>
+          <p>{{ qbStore.errorMsg }}</p>
+          <button class="outline-btn" type="button" @click="qbStore.fetchQuestions()">重新加载</button>
         </div>
+
+        <template v-else>
+          <div v-if="filteredQuestions.length === 0" class="state-box empty">
+            <h3>{{ pureQuestions.length ? '没有匹配的题目' : '题库暂无题目' }}</h3>
+            <p>{{ pureQuestions.length ? '调整筛选条件后再查看。' : '通过以下方式快速填充你的面试题库：' }}</p>
+
+            <div v-if="pureQuestions.length" class="empty-actions">
+              <button class="outline-btn" type="button" @click="resetFilters">清空筛选</button>
+            </div>
+
+            <div v-else class="empty-guide-grid">
+              <div class="guide-card" @click="$router.push({ name: 'jd-analysis' })">
+                <div class="guide-icon guide-icon--jd">
+                  <svg viewBox="0 0 24 24" fill="none" width="20" height="20"><path d="M21 6H3a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2Z" stroke="currentColor" stroke-width="1.5" /></svg>
+                </div>
+                <h4>从 JD 分析生成</h4>
+                <p>粘贴目标岗位 JD，AI 自动生成针对性面试题</p>
+              </div>
+              <div class="guide-card" @click="showAiDialog = true">
+                <div class="guide-icon guide-icon--ai">
+                  <svg viewBox="0 0 24 24" fill="none" width="20" height="20"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3L12 3Z" stroke="currentColor" stroke-width="1.5" /></svg>
+                </div>
+                <h4>AI 智能生成</h4>
+                <p>输入岗位方向，AI 生成常见面试题和参考答案</p>
+              </div>
+              <div class="guide-card" @click="showAddDialog = true">
+                <div class="guide-icon guide-icon--add">
+                  <svg viewBox="0 0 24 24" fill="none" width="20" height="20"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
+                </div>
+                <h4>手动添加</h4>
+                <p>记录面试中遇到的真题，积累个人题库</p>
+              </div>
+            </div>
+          </div>
+
+          <div v-else class="question-grid">
+            <article v-for="question in filteredQuestions" :key="question.id ?? question.content" class="question-card">
+              <button
+                class="card-delete-btn"
+                type="button"
+                title="删除题目"
+                @click.stop="deleteQuestion(question)"
+              >
+                <svg viewBox="0 0 24 24" fill="none" width="15" height="15">
+                  <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </button>
+
+              <div class="card-head">
+                <span class="category-pill">{{ question.category || '未分类' }}</span>
+                <span class="meta-pill">{{ masteryLabel(question.mastery_level) }}</span>
+              </div>
+
+              <h2>{{ question.content }}</h2>
+
+              <div class="card-meta">
+                <span>{{ formatDate(question.created_at) }}</span>
+                <span v-if="question.reference_answer">有参考答案</span>
+                <span v-if="question.focus_area">{{ question.focus_area }}</span>
+              </div>
+
+              <div class="tag-row">
+                <span v-for="tag in question.tags?.slice(0, 5)" :key="tag" class="tag-pill">#{{ tag }}</span>
+                <span v-if="!question.tags?.length" class="tag-pill muted">未标注标签</span>
+              </div>
+
+              <div class="source-row">
+                <SourceBadge
+                  :source-type="question.source_type"
+                  :source-url="question.source_url"
+                  :is-grounded="question.is_grounded"
+                  :resume-anchor="question.resume_anchor"
+                />
+              </div>
+
+              <footer class="card-actions">
+                <button class="card-btn" type="button" @click="openQuestion(question)">查看</button>
+                <button class="card-btn primary" type="button" @click="startPractice([question])">练习</button>
+              </footer>
+            </article>
+          </div>
+        </template>
       </template>
+
+      <!-- 技术自测配置 -->
+      <div v-else-if="activeTab === 'quiz-setup'" class="quiz-content">
+        <QuizSetupPanel @start="startQuiz" />
+      </div>
+
+      <!-- 技术自测答题界面 -->
+      <div v-else-if="activeTab === 'quiz-session'" class="quiz-content full">
+        <QuizSessionView
+          :session-id="currentQuizSessionId || undefined"
+          @complete="completeQuiz"
+          @exit="exitQuiz"
+        />
+      </div>
+
+      <!-- 技术自测结果 -->
+      <div v-else-if="activeTab === 'quiz-result'" class="quiz-content">
+        <template v-if="currentQuizSessionId">
+          <QuizResultPanel
+            :session-id="currentQuizSessionId"
+            @review="currentQuizSessionId = $event; activeTab = 'quiz-session'"
+            @restart="restartQuizSession"
+            @new="newQuiz"
+          />
+        </template>
+        <div v-else class="quiz-history">
+          <div class="history-header">
+            <h3>📚 自测历史</h3>
+            <p>共 {{ quizStore.sessions.length }} 条记录</p>
+          </div>
+
+          <div v-if="quizStore.sessions.length > 0" class="history-list">
+            <div
+              v-for="session in quizStore.sessions"
+              :key="session.id"
+              class="history-card"
+            >
+              <div class="history-card-main">
+                <h4>{{ session.name }}</h4>
+                <span class="session-date">{{ new Date(session.startedAt).toLocaleString() }}</span>
+                <div class="session-stats">
+                  <span class="stat-item correct">
+                    ✓ {{ Array.from(session.answers.values()).filter(a => a.isCorrect).length }} 正确
+                  </span>
+                  <span class="stat-item">{{ session.answers.size }} 题</span>
+                </div>
+              </div>
+              <div class="history-card-actions">
+                <button class="card-btn" type="button" @click="viewQuizResult(session.id)">查看结果</button>
+                <button class="card-btn secondary" type="button" @click="restartQuizSession(session.id)">重新测试</button>
+              </div>
+            </div>
+          </div>
+
+          <div v-else class="empty-state">
+            <span class="empty-icon">📝</span>
+            <p>还没有自测记录，开始第一次测试吧！</p>
+            <button class="action-btn primary" type="button" @click="newQuiz">开始自测</button>
+          </div>
+        </div>
+      </div>
     </main>
 
+    <!-- 题库详情弹窗 -->
     <Transition name="modal-fade">
       <AddQuestionDialog
         v-if="showAddDialog"
@@ -757,93 +930,19 @@ onMounted(() => {
   gap: 12px;
 }
 
-.qb-header,
-.header-actions,
-.stat-strip,
-.toolbar,
-.card-head,
-.card-meta,
-.tag-row,
-.card-actions,
-.section-row,
-.modal-footer,
-.empty-actions,
-.note-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* 空状态引导卡片 */
-.empty-guide-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  margin-top: 16px;
-  width: 100%;
-  max-width: 640px;
-}
-
-.guide-card {
-  padding: 16px;
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  background: var(--bg-card);
-  cursor: pointer;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  transition: all 0.2s ease;
-}
-
-.guide-card:hover {
-  border-color: var(--primary-500);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06);
-}
-
-.guide-card h4 {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.guide-card p {
-  margin: 0;
-  font-size: 11px;
-  color: var(--text-muted);
-  line-height: 1.4;
-}
-
-.guide-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.guide-icon--jd { background: rgba(43, 123, 184, 0.1); color: var(--primary-500); }
-.guide-icon--ai { background: rgba(26, 143, 94, 0.1); color: var(--accent-green); }
-.guide-icon--add { background: rgba(224, 138, 58, 0.1); color: var(--accent-orange); }
-
-@media (max-width: 640px) {
-  .empty-guide-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
 .qb-header {
+  display: flex;
+  align-items: flex-start;
   justify-content: space-between;
+  gap: 24px;
   flex-shrink: 0;
 }
 
-.header-copy {
-  min-width: 0;
+.header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
 }
 
 .header-copy h1 {
@@ -860,6 +959,65 @@ onMounted(() => {
   font-size: 13px;
 }
 
+/* Tab 切换 */
+.tab-switcher {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--bg-card-muted);
+  border-radius: 10px;
+  align-self: flex-start;
+}
+
+.tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tab-btn:hover {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--bg-elevated) 50%, transparent);
+}
+
+.tab-btn.active {
+  background: var(--bg-elevated);
+  color: var(--primary-600);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.tab-icon {
+  font-size: 16px;
+}
+
+.tab-count {
+  padding: 2px 6px;
+  background: var(--bg-elevated);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.tab-badge {
+  padding: 2px 6px;
+  background: var(--primary-500);
+  color: #fff;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* 按钮样式 */
+.header-actions,
 .action-btn,
 .outline-btn,
 .reset-btn,
@@ -867,13 +1025,18 @@ onMounted(() => {
 .text-btn {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
   gap: 7px;
   border: 1px solid transparent;
   border-radius: 8px;
   font-weight: 800;
   cursor: pointer;
   white-space: nowrap;
+}
+
+.header-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
 }
 
 .action-btn {
@@ -889,20 +1052,40 @@ onMounted(() => {
   box-shadow: 0 8px 18px color-mix(in srgb, var(--primary-500) 18%, transparent);
 }
 
+.action-btn.primary:hover,
+.card-btn.primary:hover {
+  background: var(--primary-700);
+  transform: translateY(-1px);
+}
+
 .action-btn.secondary {
   color: var(--primary-600);
   background: color-mix(in srgb, var(--primary-500) 7%, var(--bg-card));
   border-color: color-mix(in srgb, var(--primary-500) 16%, transparent);
 }
 
+.action-btn.secondary:hover {
+  background: color-mix(in srgb, var(--primary-500) 12%, var(--bg-card));
+  border-color: var(--primary-500);
+}
+
+/* 统计条 */
 .stat-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   min-height: 34px;
-  padding: 5px 8px;
+  padding: 5px 12px;
   border: 1px solid var(--border-color);
   border-radius: 10px;
   background: color-mix(in srgb, var(--bg-card-muted) 62%, transparent);
   flex-shrink: 0;
   flex-wrap: wrap;
+}
+
+.stat-strip.quiz-stats {
+  background: color-mix(in srgb, var(--primary-500) 5%, var(--bg-card-muted));
+  border-color: color-mix(in srgb, var(--primary-500) 20%, var(--border-color));
 }
 
 .stat-strip span {
@@ -923,6 +1106,7 @@ onMounted(() => {
   color: var(--text-primary);
 }
 
+/* 筛选工具栏 */
 .toolbar {
   display: grid;
   grid-template-columns: minmax(280px, 1fr) minmax(140px, 0.38fr) minmax(130px, 0.34fr) minmax(130px, 0.34fr) minmax(130px, 0.34fr) auto;
@@ -994,13 +1178,38 @@ onMounted(() => {
   font-size: 12px;
 }
 
-.question-area {
+.reset-btn:hover:not(:disabled),
+.outline-btn:hover:not(:disabled),
+.card-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: var(--primary-500);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* 主内容区 */
+.main-content {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   padding-right: 4px;
 }
 
+.quiz-content {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.quiz-content.full {
+  height: 100%;
+  overflow: hidden;
+}
+
+/* 题目网格 */
 .question-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
@@ -1025,7 +1234,6 @@ onMounted(() => {
   box-shadow: 0 13px 26px rgba(28, 64, 102, 0.08);
 }
 
-/* 悬停显示的删除按钮 */
 .card-delete-btn {
   position: absolute;
   top: 10px;
@@ -1054,8 +1262,10 @@ onMounted(() => {
   color: var(--accent-red);
 }
 
-.card-head,
-.tag-row {
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
@@ -1100,6 +1310,9 @@ onMounted(() => {
 }
 
 .card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex-wrap: wrap;
   margin-bottom: 10px;
   color: var(--text-muted);
@@ -1118,13 +1331,23 @@ onMounted(() => {
   vertical-align: middle;
 }
 
+.tag-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .source-row {
   margin-top: 8px;
   margin-bottom: 4px;
 }
 
 .card-actions {
+  display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 8px;
   margin-top: auto;
   padding-top: 14px;
 }
@@ -1135,6 +1358,7 @@ onMounted(() => {
   border-color: color-mix(in srgb, var(--accent-red) 20%, var(--border-color));
 }
 
+/* 状态盒子 */
 .state-box {
   display: flex;
   flex-direction: column;
@@ -1175,6 +1399,161 @@ onMounted(() => {
   to { transform: rotate(360deg); }
 }
 
+/* 空状态引导卡片 */
+.empty-guide-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 16px;
+  width: 100%;
+  max-width: 640px;
+}
+
+.guide-card {
+  padding: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--bg-card);
+  cursor: pointer;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+
+.guide-card:hover {
+  border-color: var(--primary-500);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06);
+}
+
+.guide-card h4 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.guide-card p {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.guide-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.guide-icon--jd { background: rgba(43, 123, 184, 0.1); color: var(--primary-500); }
+.guide-icon--ai { background: rgba(26, 143, 94, 0.1); color: var(--accent-green); }
+.guide-icon--add { background: rgba(224, 138, 58, 0.1); color: var(--accent-orange); }
+
+/* 技术自测历史 */
+.quiz-history {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 20px;
+  max-width: 800px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.history-header {
+  text-align: center;
+}
+
+.history-header h3 {
+  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.history-header p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.history-card {
+  padding: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+}
+
+.history-card-main {
+  margin-bottom: 12px;
+}
+
+.history-card h4 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.session-date {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.session-stats {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.stat-item {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.stat-item.correct {
+  color: var(--accent-green);
+  font-weight: 600;
+}
+
+.history-card-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 60px 20px;
+  text-align: center;
+}
+
+.empty-icon {
+  font-size: 64px;
+  opacity: 0.4;
+}
+
+.empty-state p {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+/* 模态框样式 */
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -1249,7 +1628,10 @@ onMounted(() => {
 }
 
 .section-row {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
+  gap: 8px;
 }
 
 .detail-section h3 {
@@ -1402,6 +1784,11 @@ onMounted(() => {
   background: var(--primary-500);
 }
 
+.mastery-dot:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: var(--primary-500);
+}
+
 .text-btn {
   min-height: 28px;
   padding: 0 10px;
@@ -1417,7 +1804,6 @@ onMounted(() => {
   border-color: var(--border-color);
 }
 
-/* AI 生成参考答案按钮 */
 .ai-gen-btn {
   display: inline-flex;
   align-items: center;
@@ -1446,7 +1832,8 @@ onMounted(() => {
   cursor: wait;
 }
 
-.answer-actions {
+.answer-actions,
+.note-actions {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1467,27 +1854,16 @@ onMounted(() => {
 }
 
 .modal-footer {
+  display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 8px;
   padding: 16px 32px;
   border-top: 1px solid var(--border-color);
   background: var(--bg-card-muted);
 }
 
-.action-btn:hover:not(:disabled),
-.outline-btn:hover:not(:disabled),
-.reset-btn:hover:not(:disabled),
-.card-btn:hover:not(:disabled),
-.text-btn:hover:not(:disabled),
-.mastery-dot:hover:not(:disabled) {
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--primary-500) 24%, var(--border-color));
-}
-
-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
+/* 动画 */
 .modal-fade-enter-active,
 .modal-fade-leave-active {
   transition: opacity 0.25s ease;
@@ -1507,9 +1883,20 @@ button:disabled {
   background: var(--border-color);
 }
 
+/* 响应式 */
 @media (max-width: 1080px) {
   .qb-page {
     padding: 18px;
+  }
+
+  .qb-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+  }
+
+  .header-actions {
+    justify-content: stretch;
   }
 
   .toolbar {
@@ -1522,24 +1909,27 @@ button:disabled {
 }
 
 @media (max-width: 760px) {
-  .qb-header,
-  .header-actions,
-  .toolbar,
-  .card-actions,
-  .modal-footer {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-  }
-
   .question-grid {
     grid-template-columns: 1fr;
   }
 
   .action-btn,
-  .card-btn,
-  .reset-btn {
+  .card-btn {
     width: 100%;
+    justify-content: center;
+  }
+
+  .header-actions {
+    flex-wrap: wrap;
+  }
+
+  .tab-switcher {
+    width: 100%;
+  }
+
+  .tab-btn {
+    flex: 1;
+    justify-content: center;
   }
 
   .modal-overlay {
@@ -1551,6 +1941,10 @@ button:disabled {
   .modal-footer {
     padding-left: 20px;
     padding-right: 20px;
+  }
+
+  .empty-guide-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

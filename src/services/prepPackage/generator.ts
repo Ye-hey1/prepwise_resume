@@ -105,7 +105,7 @@ export function generatePrepPackage(
   
   return {
     title: `${targetPosition}岗位备考包`,
-    generatedAt: now.toISOString().split('T')[0],
+    generatedAt: now.toISOString().slice(0, 10),
     targetPosition,
     candidateProfile,
     gapAnalysis,
@@ -400,13 +400,12 @@ export function exportToMarkdown(prepPackage: PrepPackage): string {
   
   // 追问链
   md += `## 4. 个性化项目追问链\n\n`
-  for (let i = 0; i < prepPackage.followUpChains.length; i++) {
-    const chain = prepPackage.followUpChains[i]
+  for (const [i, chain] of prepPackage.followUpChains.entries()) {
     md += `### 链 ${i + 1}：${chain.theme} → ${chain.resumeProject}\n\n`
     md += `种子题：${chain.seedQuestion}\n\n`
     md += `追问：\n`
-    for (let j = 0; j < chain.followUps.length; j++) {
-      md += `${j + 1}. ${chain.followUps[j]}\n`
+    for (const [j, followUp] of chain.followUps.entries()) {
+      md += `${j + 1}. ${followUp}\n`
     }
     md += `\n准备重点：\n`
     for (const tip of chain.preparationTips) {

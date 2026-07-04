@@ -1219,6 +1219,62 @@ button,
   min-height: calc(var(--tpl-tag-size, 11px) + 7px);
 }
 
+[class^='resume-template-'] .entry-head-project,
+[class^='resume-template-'] .entry-header-project,
+[class*=' resume-template-'] .entry-head-project,
+[class*=' resume-template-'] .entry-header-project {
+  display: flex !important;
+  align-items: baseline;
+  justify-content: flex-start;
+  gap: 14px;
+  flex-wrap: nowrap;
+}
+
+[class^='resume-template-'] .entry-project-name,
+[class*=' resume-template-'] .entry-project-name {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+[class^='resume-template-'] .entry-project-name > strong,
+[class*=' resume-template-'] .entry-project-name > strong {
+  display: inline;
+  flex: 0 0 auto;
+  min-width: 0;
+  width: auto;
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+[class^='resume-template-'] .entry-head-project .entry-project-role,
+[class^='resume-template-'] .entry-header-project .entry-project-role,
+[class*=' resume-template-'] .entry-head-project .entry-project-role,
+[class*=' resume-template-'] .entry-header-project .entry-project-role {
+  flex: 0 1 auto;
+  min-width: 2em;
+  max-width: 24em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  justify-self: start;
+  text-align: left;
+}
+
+[class^='resume-template-'] .entry-head-project .entry-date,
+[class^='resume-template-'] .entry-header-project .entry-date,
+[class*=' resume-template-'] .entry-head-project .entry-date,
+[class*=' resume-template-'] .entry-header-project .entry-date {
+  flex: 0 0 auto;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
 [class^='resume-template-'] .entry-rich,
 [class^='resume-template-'] .intro-text,
 [class*=' resume-template-'] .entry-rich,

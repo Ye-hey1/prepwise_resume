@@ -28,6 +28,9 @@ interface ResumeImportPayload {
   skills?: string
   workList?: typeof store.workList
   projectList?: typeof store.projectList
+  personalWorkList?: typeof store.personalWorkList
+  trainingList?: typeof store.trainingList
+  customSectionList?: typeof store.customSectionList
   awardList?: typeof store.awardList
   selfIntro?: string
 }
@@ -57,7 +60,10 @@ const hasExistingData = computed(() => {
     store.basicInfo.phone ||
     store.workList.some((w) => w.company) ||
     store.educationList.some((e) => e.school) ||
-    store.projectList.some((p) => p.name)
+    store.projectList.some((p) => p.name) ||
+    store.personalWorkList.some((p) => p.name || p.link) ||
+    store.trainingList.some((p) => p.institution || p.course) ||
+    store.customSectionList.some((section) => section.items.some((item) => item.title || item.description))
   )
 })
 
@@ -69,6 +75,9 @@ const moduleStats = computed(() => {
     education: data.educationList?.length ?? 0,
     work: data.workList?.length ?? 0,
     project: data.projectList?.length ?? 0,
+    personalWorks: data.personalWorkList?.length ?? 0,
+    training: data.trainingList?.length ?? 0,
+    customSections: data.customSectionList?.length ?? 0,
     skills: 1,
     awards: data.awardList?.length ?? 0,
     selfIntro: 1,
@@ -340,6 +349,9 @@ function confirmImport() {
     parsedData.value.basicInfo?.name ? `已识别 ${parsedData.value.basicInfo.name}` : '已完成简历解析',
     parsedData.value.workList?.length ? `工作 ${parsedData.value.workList.length} 段` : '',
     parsedData.value.projectList?.length ? `项目 ${parsedData.value.projectList.length} 个` : '',
+    parsedData.value.personalWorkList?.length ? `作品 ${parsedData.value.personalWorkList.length} 个` : '',
+    parsedData.value.trainingList?.length ? `培训 ${parsedData.value.trainingList.length} 段` : '',
+    parsedData.value.customSectionList?.length ? `自定义 ${parsedData.value.customSectionList.length} 类` : '',
     parsedData.value.educationList?.length ? `教育 ${parsedData.value.educationList.length} 段` : '',
   ]
     .filter(Boolean)
@@ -484,6 +496,10 @@ function formatFileSize(bytes: number): string {
             <div v-if="moduleStats.project" class="module-stat">
               <span class="module-stat-num">{{ moduleStats.project }}</span>
               <span class="module-stat-label">项目经历</span>
+            </div>
+            <div v-if="moduleStats.personalWorks" class="module-stat">
+              <span class="module-stat-num">{{ moduleStats.personalWorks }}</span>
+              <span class="module-stat-label">个人作品</span>
             </div>
             <div v-if="moduleStats.education" class="module-stat">
               <span class="module-stat-num">{{ moduleStats.education }}</span>

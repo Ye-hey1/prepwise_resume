@@ -2,6 +2,7 @@
 import RichEditor from '@/components/common/RichEditor.vue'
 import AiInlineActions from '@/components/resume/AiInlineActions.vue'
 import ResumeAssistantPanel from '@/components/resume/ResumeAssistantPanel.vue'
+import SuggestionApplyPanel from '@/components/ai/SuggestionApplyPanel.vue'
 import { optimizeField, parseAiResponse } from '@/services/aiService'
 import { getJdOptimizeContext, buildJdAwarePromptSuffix } from '@/services/jdAwareOptimize'
 import { renderOptimizedApplyHtml, renderOptimizedPreviewHtml } from '@/services/aiOptimizeFormatter'
@@ -9,9 +10,11 @@ import { getBuiltinResumeAssistantExamples } from '@/services/resumeAssistantBui
 import {
   generateResumeAssistantAdvice,
   generateResumeAssistantSuggestions,
+  generateResumeApplySuggestions,
 } from '@/services/resumeAssistantService'
 import type {
   ResumeAssistantAdviceItem,
+  ResumeAssistantApplyItem,
   ResumeAssistantExampleItem,
   ResumeFieldAiContext,
 } from '@/services/types/resumeAssistant'
@@ -46,6 +49,12 @@ const assistantPanelVisible = ref(false)
 const assistantAnchorEl = ref<HTMLElement | null>(null)
 const assistBtnRef = ref<HTMLElement | null>(null)
 
+// 逐条应用相关状态
+const applyPanelVisible = ref(false)
+const applyItems = ref<ResumeAssistantApplyItem[]>([])
+const applyPanelBusy = ref(false)
+const applyPanelError = ref('')
+
 const canOptimize = computed(() => props.modelValue.replace(/<[^>]+>/g, '').trim().length > 0)
 const isEmptyField = computed(() => !canOptimize.value)
 const optimizedContentHtml = computed(() => renderOptimizedPreviewHtml(props.context, optimizedContent.value))
@@ -69,6 +78,8 @@ const suggestedWordRange = computed<{ min: number; max: number }>(() => {
   if (key === 'projectExperience' && field === 'mainWork') return { min: 100, max: 500 }
   if (key === 'awards') return { min: 20, max: 200 }
   if (key === 'education') return { min: 0, max: 200 }
+  if (key === 'trainingExperience') return { min: 30, max: 260 }
+  if (key === 'customSections') return { min: 20, max: 300 }
   return { min: 0, max: 500 }
 })
 
@@ -340,6 +351,78 @@ async function copySuggestion(text: string) {
     aiError.value = '复制失败，请手动复制内容。'
   }
 }
+
+// 逐条应用相关函数
+async function refreshApplyItems() {
+  const config = aiConfigStore.getConfigForFeature('resumeOptimize')
+  applyPanelBusy.value = true
+  applyPanelError.value = ''
+  try {
+    const result = await generateResumeApplySuggestions(config, props.context, {
+      onChunk: () => {},
+      onDone: () => {},
+      onError: (message) => {
+        applyPanelError.value = message
+      },
+    })
+    applyItems.value = result.applyItems
+    if (result.applyItems.length === 0 && !applyPanelError.value) {
+      applyPanelError.value = '当前内容很好，暂无优化建议。'
+    }
+  } catch {
+    // 错误已由 service 设置
+  } finally {
+    applyPanelBusy.value = false
+  }
+}
+
+function applySingleItem(item: ResumeAssistantApplyItem) {
+  // 在当前内容中查找并替换原文
+  const currentText = props.modelValue
+  const plainCurrent = currentText.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ')
+  const plainOriginal = item.original.replace(/\s+/g, ' ').trim()
+  const plainSuggested = item.suggested.trim()
+
+  // 尝试精确匹配替换
+  let replaced = false
+  let newText = currentText
+
+  // 方法1: 纯文本匹配
+  if (plainCurrent.includes(plainOriginal)) {
+    const before = plainCurrent.indexOf(plainOriginal)
+    // 简单替换（适用于纯文本内容）
+    newText = plainCurrent.replace(plainOriginal, plainSuggested)
+    replaced = true
+  }
+
+  if (replaced) {
+    updateValue(newText)
+    // 标记为已应用
+    const target = applyItems.value.find(i => i.id === item.id)
+    if (target) target.applied = true
+  } else {
+    applyPanelError.value = '无法自动应用：原文片段在当前内容中未找到精确匹配。请手动应用建议。'
+  }
+}
+
+function applyAllItems() {
+  for (const item of applyItems.value) {
+    if (!item.applied) {
+      applySingleItem(item)
+    }
+  }
+}
+
+function dismissApplyItem(id: string) {
+  applyItems.value = applyItems.value.filter(item => item.id !== id)
+}
+
+async function handleShowApplyPanel() {
+  applyPanelVisible.value = !applyPanelVisible
+  if (applyPanelVisible.value && applyItems.value.length === 0) {
+    await refreshApplyItems()
+  }
+}
 </script>
 
 <template>
@@ -354,6 +437,17 @@ async function copySuggestion(text: string) {
         <button ref="assistBtnRef" type="button" class="editor-ai-btn ghost" :disabled="isBusy" @click.stop="handleAssist(assistBtnRef)">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M12 2a7 7 0 0 1 4 12.74V17a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-2.26A7 7 0 0 1 12 2zM9 21h6M10 17v4M14 17v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
           简历助手
+        </button>
+        <button
+          v-if="!isEmptyField"
+          type="button"
+          class="editor-ai-btn ghost"
+          :class="{ active: applyPanelVisible }"
+          :disabled="isBusy"
+          @click.stop="handleShowApplyPanel"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          逐条优化
         </button>
       </div>
     </div>
@@ -389,6 +483,16 @@ async function copySuggestion(text: string) {
           @apply-material="applyAssistantText"
           @copy-text="copySuggestion"
           @remove-material="handleRemoveMaterial"
+        />
+        <SuggestionApplyPanel
+          v-if="applyPanelVisible"
+          :items="applyItems"
+          :busy="applyPanelBusy"
+          :error="applyPanelError"
+          @apply-item="applySingleItem"
+          @apply-all="applyAllItems"
+          @dismiss-item="dismissApplyItem"
+          @refresh="refreshApplyItems"
         />
       </template>
       <template #footer>
@@ -465,6 +569,12 @@ async function copySuggestion(text: string) {
 
 .editor-ai-btn.ghost:hover:not(:disabled) {
   background: rgba(43, 123, 184, 0.06);
+}
+
+.editor-ai-btn.ghost.active {
+  background: var(--accent-blue-500);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(43, 123, 184, 0.18);
 }
 
 .editor-ai-btn:disabled {

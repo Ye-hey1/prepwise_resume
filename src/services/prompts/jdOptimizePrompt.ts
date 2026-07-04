@@ -29,7 +29,7 @@ ${JD_JSON_STRICT_RULES}
 
 ## 字段说明
 
-- section：简历模块，取值：basicInfo / education / skills / workExperience / projectExperience / awards / selfIntro
+- section：简历模块，取值：basicInfo / education / skills / workExperience / projectExperience / personalWorks / trainingExperience / awards / customSections / selfIntro
 - issueType：问题类型，取值示例：
   - "missing_keyword" — 缺少 JD 中的关键词
   - "weak_description" — 描述不够具体或有量化
@@ -58,7 +58,7 @@ ${JD_JSON_STRICT_RULES}
 - \`[必须]\`：缺失时优先生成 high priority 建议，且建议应尽量可直接落地到简历文本。
 - \`[期望]\`：通常生成 high 或 medium priority 建议，视缺口大小而定。
 - \`[加分]\`：通常生成 medium 或 low priority 建议，不要喧宾夺主。
-- 如果 \`[必须]\` 条目缺失，优先覆盖 skills / workExperience / projectExperience / selfIntro 等最能补强匹配度的模块。`
+- 如果 \`[必须]\` 条目缺失，优先覆盖 skills / workExperience / projectExperience / personalWorks / trainingExperience / customSections / selfIntro 等最能补强匹配度的模块。`
 
 export const JD_OPTIMIZE_USER_TEMPLATE = `请根据目标岗位需求与公司情报，对以下简历给出针对性优化建议。
 

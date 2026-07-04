@@ -1,4 +1,13 @@
-export type ResumeFieldAiModuleKey = 'skills' | 'selfIntro' | 'workExperience' | 'projectExperience' | 'education' | 'awards'
+export type ResumeFieldAiModuleKey =
+  | 'skills'
+  | 'selfIntro'
+  | 'workExperience'
+  | 'projectExperience'
+  | 'personalWorks'
+  | 'trainingExperience'
+  | 'education'
+  | 'awards'
+  | 'customSections'
 
 export interface ResumeFieldAiContext {
   moduleKey: ResumeFieldAiModuleKey
@@ -37,6 +46,17 @@ export interface ResumeAssistantAdviceItem {
   example?: string
 }
 
+export interface ResumeAssistantApplyItem {
+  id: string
+  sectionId?: string
+  original: string
+  suggested: string
+  reason: string
+  applied: boolean
+  category?: 'grammar' | 'content' | 'structure' | 'formatting'
+  severity?: 'low' | 'medium' | 'high'
+}
+
 export interface ResumeAssistantMaterialItem {
   id: string
   title: string
@@ -54,6 +74,10 @@ export interface ResumeAssistantResult {
 
 export interface ResumeAssistantAdviceResult {
   advice: ResumeAssistantAdviceItem[]
+}
+
+export interface ResumeAdviceApplyResult {
+  applyItems: ResumeAssistantApplyItem[]
 }
 
 export type ResumeAssistantTabKey = 'examples' | 'advice' | 'materials'

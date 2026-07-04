@@ -56,7 +56,13 @@ export const useResumeAssistantStore = defineStore('resumeAssistant', () => {
       id: `material_${Date.now()}`,
       title: context.entryTitle || context.fieldLabel,
       moduleKey: context.moduleKey,
-      type: context.moduleKey === 'skills' ? 'skill' : context.moduleKey === 'projectExperience' ? 'project' : 'experience',
+      type: context.moduleKey === 'skills'
+        ? 'skill'
+        : context.moduleKey === 'projectExperience' || context.moduleKey === 'personalWorks'
+          ? 'project'
+          : context.moduleKey === 'awards' || context.moduleKey === 'customSections'
+            ? 'achievement'
+            : 'experience',
       content,
       tags: extractTags(`${context.fieldLabel} ${Object.values(context.entryMeta ?? {}).join(' ')}`),
       createdAt: now,

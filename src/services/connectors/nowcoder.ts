@@ -91,7 +91,7 @@ export class NowcoderConnector implements Connector {
     
     if (!contentMatch) return null
     
-    const content = contentMatch[1]
+    const content = (contentMatch[1] ?? '')
       .replace(/<[^>]*>/g, '')
       .replace(/\s+/g, ' ')
       .trim()
@@ -100,7 +100,7 @@ export class NowcoderConnector implements Connector {
       source: 'nowcoder',
       url,
       content,
-      postedAt: timeMatch ? this.parseDate(timeMatch[1]) : undefined,
+      postedAt: timeMatch?.[1] ? this.parseDate(timeMatch[1]) : undefined,
     }
   }
 

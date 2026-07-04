@@ -117,13 +117,13 @@ export class WebConnector implements Connector {
   private parseZhihu(html: string): string {
     const match = html.match(/<div class="RichContent-inner"[^>]*>([\s\S]*?)<\/div>/i)
     if (!match) return ''
-    return this.stripHtml(match[1])
+    return this.stripHtml(match[1] ?? '')
   }
 
   private parseCsdn(html: string): string {
     const match = html.match(/<div class="article_content"[^>]*>([\s\S]*?)<\/div>/i)
     if (!match) return ''
-    return this.stripHtml(match[1])
+    return this.stripHtml(match[1] ?? '')
   }
 
   private parseGeneric(html: string): string {
@@ -138,7 +138,7 @@ export class WebConnector implements Connector {
     for (const pattern of patterns) {
       const match = html.match(pattern)
       if (match) {
-        return this.stripHtml(match[1])
+        return this.stripHtml(match[1] ?? '')
       }
     }
     
@@ -172,11 +172,11 @@ export class WebConnector implements Connector {
     
     for (const pattern of datePatterns) {
       const match = html.match(pattern)
-      if (match) {
+      if (match?.[1]) {
         try {
           const date = new Date(match[1])
           if (!isNaN(date.getTime())) {
-            return date.toISOString().split('T')[0]
+            return date.toISOString().split('T')[0] ?? undefined
           }
         } catch {
           // 忽略解析错误

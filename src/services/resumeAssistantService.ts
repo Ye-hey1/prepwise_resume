@@ -1,8 +1,11 @@
 import { RESUME_ADVICE_SYSTEM_PROMPT, buildResumeAdviceUserPrompt } from './prompts/resumeAdvicePrompt'
+import { RESUME_APPLY_SYSTEM_PROMPT, buildResumeApplyUserPrompt } from './prompts/resumeApplyPrompt'
 import { RESUME_ASSISTANT_SYSTEM_PROMPT, buildResumeAssistantUserPrompt } from './prompts/resumeAssistantPrompt'
 import type {
+  ResumeAdviceApplyResult,
   ResumeAssistantAdviceItem,
   ResumeAssistantAdviceResult,
+  ResumeAssistantApplyItem,
   ResumeAssistantResult,
   ResumeAssistantSuggestion,
   ResumeFieldAiContext,
@@ -75,6 +78,43 @@ function normalizeAdviceResult(raw: unknown): ResumeAssistantAdviceResult {
 
   return {
     advice: advice.slice(0, 5),
+  }
+}
+
+function normalizeApplyItem(item: Partial<ResumeAssistantApplyItem>, index: number): ResumeAssistantApplyItem | null {
+  const original = typeof item.original === 'string' ? item.original.trim() : ''
+  const suggested = typeof item.suggested === 'string' ? item.suggested.trim() : ''
+  const reason = typeof item.reason === 'string' ? item.reason.trim() : ''
+
+  if (!original || !suggested || !reason) return null
+
+  const validCategories = ['grammar', 'content', 'structure', 'formatting']
+  const category = validCategories.includes(item.category || '') ? item.category : undefined
+
+  const validSeverities = ['low', 'medium', 'high']
+  const severity = validSeverities.includes(item.severity || '') ? item.severity : undefined
+
+  return {
+    id: typeof item.id === 'string' && item.id.trim() ? item.id.trim() : `apply-${index + 1}`,
+    original,
+    suggested,
+    reason,
+    category,
+    severity,
+    sectionId: typeof item.sectionId === 'string' ? item.sectionId : undefined,
+    applied: false,
+  }
+}
+
+function normalizeApplyResult(raw: unknown): ResumeAdviceApplyResult {
+  const applyItems = Array.isArray((raw as { applyItems?: unknown[] } | null)?.applyItems)
+    ? (raw as { applyItems: unknown[] }).applyItems
+        .map((item, index) => normalizeApplyItem(item as Partial<ResumeAssistantApplyItem>, index))
+        .filter((item): item is ResumeAssistantApplyItem => Boolean(item))
+    : []
+
+  return {
+    applyItems: applyItems.slice(0, 8),
   }
 }
 
@@ -206,6 +246,22 @@ export async function generateResumeAssistantAdvice(
     buildResumeAdviceUserPrompt(context),
     callbacks,
     normalizeAdviceResult,
+    signal,
+  )
+}
+
+export async function generateResumeApplySuggestions(
+  config: ResumeAssistantConfig,
+  context: ResumeFieldAiContext,
+  callbacks: ResumeAssistantCallbacks,
+  signal?: AbortSignal,
+): Promise<ResumeAdviceApplyResult> {
+  return requestJsonResult(
+    config,
+    RESUME_APPLY_SYSTEM_PROMPT,
+    buildResumeApplyUserPrompt(context),
+    callbacks,
+    normalizeApplyResult,
     signal,
   )
 }

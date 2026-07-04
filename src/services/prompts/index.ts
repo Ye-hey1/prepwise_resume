@@ -1,10 +1,13 @@
 import { awardsOutputRules } from './awardsPrompt'
 import { basicInfoOutputRules } from './basicInfoPrompt'
 import { educationOutputRules } from './educationPrompt'
+import { customSectionsOutputRules } from './customSectionsPrompt'
+import { personalWorksOutputRules } from './personalWorksPrompt'
 import { getProjectExperienceOutputRules } from './projectExperiencePrompt'
 import { selfIntroOutputRules } from './selfIntroPrompt'
 import { skillsOutputRules } from './skillsPrompt'
 import { COMMON_OUTPUT_RULES, SYSTEM_PROMPT } from './shared'
+import { trainingExperienceOutputRules } from './trainingExperiencePrompt'
 import { getWorkExperienceOutputRules } from './workExperiencePrompt'
 
 export interface ModulePromptContext {
@@ -20,7 +23,10 @@ const MODULE_OUTPUT_RULE_BUILDERS: Record<string, OutputRulesBuilder> = {
   skills: () => skillsOutputRules,
   workExperience: (context) => getWorkExperienceOutputRules(context.workCompanyNames),
   projectExperience: (context) => getProjectExperienceOutputRules(context.projectNames),
+  personalWorks: () => personalWorksOutputRules,
+  trainingExperience: () => trainingExperienceOutputRules,
   awards: () => awardsOutputRules,
+  customSections: () => customSectionsOutputRules,
   selfIntro: () => selfIntroOutputRules,
 }
 

@@ -8,8 +8,10 @@ import { GREEN_ICON_LINEAR_TEMPLATE } from './green-icon-linear/template'
 import { WORKPLACE_GENERAL_TEMPLATE } from './workplace-general/template'
 import ProductManagerTemplate from './product-manager/template'
 import type { ResumeTemplateDefinition, ResumeTemplateKey } from './types'
+import { TEMPLATE_CATEGORIES } from './categories'
 
-export type { ResumeTemplateDefinition, ResumeTemplateKey, ResumeTemplateModel } from './types'
+export type { ResumeTemplateCategory, ResumeTemplateDefinition, ResumeTemplateKey, ResumeTemplateModel } from './types'
+export { TEMPLATE_CATEGORIES, getCategoryInfo, getCategoryName } from './categories'
 
 const LEGACY_TEMPLATE_ALIAS: Record<string, ResumeTemplateKey> = {
   'classic-blue': 'blue-linear',
@@ -74,4 +76,35 @@ export function normalizeResumeTemplateKey(value: unknown): ResumeTemplateKey {
   if (typeof value !== 'string') return FALLBACK_TEMPLATE.key
   const normalized = LEGACY_TEMPLATE_ALIAS[value] ?? value
   return isResumeTemplateKey(normalized) ? normalized : FALLBACK_TEMPLATE.key
+}
+
+/**
+ * 按分类分组模板
+ */
+export function getTemplatesByCategory(): Map<ResumeTemplateDefinition['category'], ResumeTemplateDefinition[]> {
+  const grouped = new Map<ResumeTemplateDefinition['category'], ResumeTemplateDefinition[]>()
+
+  // 初始化所有分类
+  for (const category of TEMPLATE_CATEGORIES) {
+    grouped.set(category.id, [])
+  }
+  // 添加未分类
+  grouped.set(undefined, [])
+
+  for (const template of RESUME_TEMPLATES) {
+    const category = template.category || undefined
+    const templates = grouped.get(category) || []
+    templates.push(template)
+    grouped.set(category, templates)
+  }
+
+  return grouped
+}
+
+/**
+ * 获取指定分类的模板列表
+ */
+export function getTemplatesByCategoryId(categoryId?: ResumeTemplateDefinition['category']): ResumeTemplateDefinition[] {
+  if (!categoryId) return RESUME_TEMPLATES
+  return RESUME_TEMPLATES.filter(t => t.category === categoryId)
 }

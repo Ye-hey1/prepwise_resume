@@ -5,8 +5,11 @@
 import type {
   AwardEntry,
   BasicInfo,
+  CustomSection,
   EducationEntry,
+  PersonalWorkEntry,
   ProjectEntry,
+  TrainingEntry,
   WorkEntry,
 } from '@/stores/resume'
 import type { ResumeFieldAiContext } from './types/resumeAssistant'
@@ -80,6 +83,59 @@ function formatProjects(list: ProjectEntry[]): string {
     .join('\n---\n')
 }
 
+function formatPersonalWorks(list: PersonalWorkEntry[]): string {
+  return list
+    .map((w) => {
+      const parts: string[] = []
+      if (w.name) parts.push(`作品名称：${w.name}`)
+      if (w.type) parts.push(`作品类型：${w.type}`)
+      if (w.link) parts.push(`作品链接：${w.link}`)
+      if (w.techStack) parts.push(`技术栈/工具：${w.techStack}`)
+      if (w.description) parts.push(`作品简介：${stripHtml(w.description)}`)
+      if (w.contribution) parts.push(`我的贡献：${stripHtml(w.contribution)}`)
+      if (w.outcome) parts.push(`成果数据：${stripHtml(w.outcome)}`)
+      return parts.join('\n')
+    })
+    .join('\n---\n')
+}
+
+function formatTraining(list: TrainingEntry[]): string {
+  return list
+    .map((t) => {
+      const parts: string[] = []
+      if (t.institution) parts.push(`培训机构：${t.institution}`)
+      if (t.course) parts.push(`课程名称：${t.course}`)
+      if (t.credential) parts.push(`证书/资质：${t.credential}`)
+      if (t.startDate || t.endDate) parts.push(`时间：${t.startDate || ''} ~ ${t.endDate || ''}`)
+      if (t.location) parts.push(`地点/形式：${t.location}`)
+      if (t.description) parts.push(`培训内容：${stripHtml(t.description)}`)
+      if (t.outcome) parts.push(`成果收获：${stripHtml(t.outcome)}`)
+      return parts.join('\n')
+    })
+    .join('\n---\n')
+}
+
+function formatCustomSections(list: CustomSection[]): string {
+  return list
+    .map((section) => {
+      const items = section.items
+        .map((item) => {
+          const parts: string[] = []
+          if (item.title) parts.push(`条目标题：${item.title}`)
+          if (item.subtitle) parts.push(`补充信息：${item.subtitle}`)
+          if (item.date) parts.push(`时间：${item.date}`)
+          if (item.link) parts.push(`链接：${item.link}`)
+          if (item.description) parts.push(`描述：${stripHtml(item.description)}`)
+          return parts.join('\n')
+        })
+        .filter(Boolean)
+        .join('\n---\n')
+      return [section.title ? `模块标题：${section.title}` : '', items].filter(Boolean).join('\n')
+    })
+    .filter(Boolean)
+    .join('\n===\n')
+}
+
 function formatAwards(list: AwardEntry[]): string {
   return list
     .map((a) => {
@@ -98,7 +154,10 @@ const MODULE_LABELS: Record<string, string> = {
   skills: '专业技能',
   workExperience: '工作经历',
   projectExperience: '项目经历',
+  personalWorks: '个人作品',
+  trainingExperience: '培训经历',
   awards: '荣誉奖项',
+  customSections: '自定义模块',
   selfIntro: '个人简介',
 }
 
@@ -128,6 +187,9 @@ export interface ModuleData {
   skills: string
   workList: WorkEntry[]
   projectList: ProjectEntry[]
+  personalWorkList: PersonalWorkEntry[]
+  trainingList: TrainingEntry[]
+  customSectionList: CustomSection[]
   awardList: AwardEntry[]
   selfIntro: string
 }
@@ -144,8 +206,14 @@ export function buildModuleText(moduleKey: string, data: ModuleData): string {
       return formatWork(data.workList)
     case 'projectExperience':
       return formatProjects(data.projectList)
+    case 'personalWorks':
+      return formatPersonalWorks(data.personalWorkList)
+    case 'trainingExperience':
+      return formatTraining(data.trainingList)
     case 'awards':
       return formatAwards(data.awardList)
+    case 'customSections':
+      return formatCustomSections(data.customSectionList)
     case 'selfIntro':
       return stripHtml(data.selfIntro)
     default:

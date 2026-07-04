@@ -18,6 +18,12 @@ export function getBuiltinResumeAssistantExamples(moduleKey: ResumeFieldAiModule
       return generateWorkExamples(jobTitle, userKeywords)
     case 'projectExperience':
       return generateProjectExamples(jobTitle, userKeywords)
+    case 'personalWorks':
+      return generatePersonalWorkExamples(jobTitle, userKeywords)
+    case 'trainingExperience':
+      return generateTrainingExamples(jobTitle, userKeywords)
+    case 'customSections':
+      return generateCustomSectionExamples(jobTitle, userKeywords)
     case 'skills':
       return generateSkillsExamples(jobTitle, userKeywords)
     case 'selfIntro':
@@ -103,6 +109,84 @@ function generateProjectExamples(jobTitle: string, keywords: string[]): ResumeAs
       source: 'builtin',
       tone: '数据驱动',
       highlight: '性能提升',
+    },
+  ]
+}
+
+function generatePersonalWorkExamples(jobTitle: string, keywords: string[]): ResumeAssistantExampleItem[] {
+  const techHint = keywords.length > 0 ? keywords.slice(0, 3).join('、') : '相关工具'
+  const roleHint = jobTitle || '目标方向'
+
+  return [
+    {
+      id: 'dynamic-workfolio-1',
+      moduleKey: 'personalWorks',
+      text: `围绕${roleHint}场景独立完成作品规划、交互设计与功能实现，使用${techHint}沉淀可访问的成果展示。`,
+      tags: [roleHint, '作品集', '可访问'],
+      source: 'builtin',
+      tone: '成果展示',
+      highlight: '独立完成',
+    },
+    {
+      id: 'dynamic-workfolio-2',
+      moduleKey: 'personalWorks',
+      text: `持续迭代作品内容与体验，补充演示链接、使用说明和关键数据，提升作品可信度与招聘沟通效率。`,
+      tags: ['链接', '迭代', '数据'],
+      source: 'builtin',
+      tone: '结果导向',
+      highlight: '可信证据',
+    },
+  ]
+}
+
+function generateTrainingExamples(jobTitle: string, keywords: string[]): ResumeAssistantExampleItem[] {
+  const role = jobTitle || '目标岗位'
+  const techHint = keywords.length > 0 ? keywords.slice(0, 3).join('、') : '岗位相关能力'
+
+  return [
+    {
+      id: 'dynamic-training-1',
+      moduleKey: 'trainingExperience',
+      text: `围绕${role}所需能力系统完成课程训练，覆盖${techHint}等核心主题，并通过实践任务强化落地能力。`,
+      tags: [role, '课程训练', '实践'],
+      source: 'builtin',
+      tone: '专业',
+      highlight: '系统学习',
+    },
+    {
+      id: 'dynamic-training-2',
+      moduleKey: 'trainingExperience',
+      text: `完成课程考核与阶段性作品沉淀，将学习内容转化为可展示成果，补强目标岗位相关能力。`,
+      tags: ['考核', '作品', '能力补强'],
+      source: 'builtin',
+      tone: '成果导向',
+      highlight: '可验证产出',
+    },
+  ]
+}
+
+function generateCustomSectionExamples(jobTitle: string, keywords: string[]): ResumeAssistantExampleItem[] {
+  const role = jobTitle || '目标方向'
+  const keywordText = keywords.length > 0 ? keywords.slice(0, 3).join('、') : '相关主题'
+
+  return [
+    {
+      id: 'dynamic-custom-1',
+      moduleKey: 'customSections',
+      text: `围绕${role}相关主题完成内容沉淀，体现了在${keywordText}方面的持续投入和可验证成果。`,
+      tags: [role, '可验证', '沉淀'],
+      source: 'builtin',
+      tone: '概括型',
+      highlight: '相关性',
+    },
+    {
+      id: 'dynamic-custom-2',
+      moduleKey: 'customSections',
+      text: `在该经历中承担核心角色，负责推进关键事项并沉淀链接、证明材料或结果数据，提升简历可信度。`,
+      tags: ['角色', '证明材料', '可信度'],
+      source: 'builtin',
+      tone: '证据导向',
+      highlight: '可信证据',
     },
   ]
 }

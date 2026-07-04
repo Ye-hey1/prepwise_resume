@@ -16,6 +16,9 @@ const PROJECT_TECH_KEYWORDS = [
 
 const PROJECT_RESULT_PHRASE_REGEX = /(提升[^，。；\n]*|降低[^，。；\n]*|优化[^，。；\n]*|缩短[^，。；\n]*|减少[^，。；\n]*|支撑[^，。；\n]*|保障[^，。；\n]*)/g
 const PROJECT_METRIC_REGEX = /(\d+(?:\.\d+)?%|\d+(?:\.\d+)?倍|\d+(?:\.\d+)?万|\d+(?:\.\d+)?ms|\d+(?:\.\d+)?秒)/g
+const BOLD_TOKEN_PATTERN = /@@BOLD_TOKEN_\d+@@/
+const BOLD_TOKEN_GLOBAL_REGEX = /@@BOLD_TOKEN_\d+@@/g
+const LEAKED_BOLD_TOKEN_FALLBACK = '待补充量化数据'
 
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -70,6 +73,7 @@ export function normalizeMarkdownListContent(markdownText: string): string {
 export function sanitizeMarkdownForRender(markdownText: string): string {
   let sanitized = markdownText
     .replace(/(^|\n)(\s*)\*\*(?=\s+)/g, '$1$2')
+    .replace(BOLD_TOKEN_GLOBAL_REGEX, LEAKED_BOLD_TOKEN_FALLBACK)
     .replace(/^\s*(?:如下|优化后如下|优化如下|优化后内容如下)\s*[：:]?\s*/i, '')
     .replace(/(^|\n)(\s*)(?:\*\*)?\s*(?:优化后内容|优化内容|优化建议|建议如下)\s*[：:]?\s*(?:\*\*)?\s*(?=\n|$)/gi, '$1$2')
     .trim()
@@ -99,7 +103,10 @@ function protectBoldTokens(text: string, tokenMap: Record<string, string>): stri
 }
 
 function wrapRegexMatchesAsBoldToken(text: string, regex: RegExp, tokenMap: Record<string, string>): string {
-  return text.replace(regex, (match) => createBoldToken(`**${match}**`, tokenMap))
+  return text.replace(regex, (match) => {
+    if (BOLD_TOKEN_PATTERN.test(match)) return match
+    return createBoldToken(`**${match}**`, tokenMap)
+  })
 }
 
 function wrapKeywordsAsBoldToken(text: string, keywords: readonly string[], tokenMap: Record<string, string>): string {
@@ -114,10 +121,19 @@ function wrapKeywordsAsBoldToken(text: string, keywords: readonly string[], toke
 
 function restoreBoldTokens(text: string, tokenMap: Record<string, string>): string {
   let output = text
-  for (const [token, raw] of Object.entries(tokenMap)) {
-    output = output.split(token).join(raw)
+  const maxIterations = Object.keys(tokenMap).length + 2
+
+  for (let i = 0; i < maxIterations && BOLD_TOKEN_PATTERN.test(output); i++) {
+    let replaced = false
+    for (const [token, raw] of Object.entries(tokenMap)) {
+      if (!output.includes(token)) continue
+      output = output.split(token).join(raw)
+      replaced = true
+    }
+    if (!replaced) break
   }
-  return output
+
+  return output.replace(BOLD_TOKEN_GLOBAL_REGEX, LEAKED_BOLD_TOKEN_FALLBACK)
 }
 
 function enhanceProjectMainWorkLineBold(lineBody: string): string {
@@ -156,6 +172,17 @@ function normalizeProjectIntroductionSingleLine(markdownText: string): string {
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => line.replace(/^[-*+]\s+/, '').replace(/^\d+\.\s+/, '').trim())
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function normalizePersonalWorkDescriptionSingleLine(markdownText: string): string {
+  return removeMarkdownStrongMarkers(markdownText)
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => stripMarkdownDecorators(line))
     .filter(Boolean)
     .join(' ')
     .replace(/\s+/g, ' ')
@@ -233,6 +260,10 @@ export function renderOptimizedPreviewHtml(context: ResumeFieldAiContext, rawCon
     return markdown.render(normalizeProjectIntroductionSingleLine(sanitized))
   }
 
+  if (context.moduleKey === 'personalWorks' && context.fieldKey === 'description') {
+    return markdown.render(normalizePersonalWorkDescriptionSingleLine(sanitized))
+  }
+
   return markdown.render(sanitized)
 }
 
@@ -260,8 +291,20 @@ export function renderOptimizedApplyHtml(context: ResumeFieldAiContext, rawConte
     return renderWithOriginalStyle(enhanceProjectMainWorkBold(sanitized), currentHtml, 'ordered')
   }
 
+  if (context.moduleKey === 'personalWorks' && context.fieldKey === 'description') {
+    return markdown.render(normalizePersonalWorkDescriptionSingleLine(sanitized))
+  }
+
+  if (context.moduleKey === 'personalWorks') {
+    return renderWithOriginalStyle(sanitized, currentHtml, context.fieldKey === 'outcome' ? null : 'unordered')
+  }
+
   if (context.moduleKey === 'awards') {
     return renderWithOriginalStyle(sanitized, currentHtml, null)
+  }
+
+  if (context.moduleKey === 'trainingExperience' || context.moduleKey === 'customSections') {
+    return renderWithOriginalStyle(sanitized, currentHtml, 'unordered')
   }
 
   return markdown.render(sanitized)

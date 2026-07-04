@@ -54,7 +54,7 @@ ${JD_JSON_STRICT_RULES}
 
 ### recommendedStories（2-4 条）
 - 推荐最值得讲的经历/项目/能力故事
-- moduleKey 只能取：basicInfo / education / skills / workExperience / projectExperience / awards / selfIntro
+- moduleKey 只能取：basicInfo / education / skills / workExperience / projectExperience / personalWorks / trainingExperience / awards / customSections / selfIntro
 - 若更像项目案例，优先用 projectExperience；若更像岗位职责沉淀，优先用 workExperience
 - talkingPoints 输出 2-4 个具体展开点，必须可执行
 

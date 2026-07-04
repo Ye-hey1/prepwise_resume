@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import MarkdownIt from 'markdown-it'
-import type { AwardEntry, ProjectEntry, WorkEntry } from '@/stores/resume'
+import type { AwardEntry, CustomSection, PersonalWorkEntry, ProjectEntry, TrainingEntry, WorkEntry } from '@/stores/resume'
 import { useResumeStore } from '@/stores/resume'
 import { useAiConfigStore } from '@/stores/aiConfig'
 import {
@@ -51,7 +51,10 @@ type ApplyUndoSnapshot = {
   previousWorkDescriptions?: string[]
   previousProjectIntroductions?: string[]
   previousProjectMainWorks?: string[]
+  previousPersonalWorks?: PersonalWorkEntry[]
+  previousTrainingList?: TrainingEntry[]
   previousAwards?: AwardEntry[]
+  previousCustomSectionList?: CustomSection[]
   previousIntroduction?: string
   hadEntry?: boolean
   createdAwardId?: string
@@ -137,13 +140,19 @@ const originalModuleText = computed(() => {
     skills: resumeStore.skills,
     workList: [...resumeStore.workList],
     projectList: [...resumeStore.projectList],
+    personalWorkList: [...resumeStore.personalWorkList],
+    trainingList: [...resumeStore.trainingList],
+    customSectionList: resumeStore.customSectionList.map((section) => ({
+      ...section,
+      items: section.items.map((item) => ({ ...item })),
+    })),
     awardList: [...resumeStore.awardList],
     selfIntro: resumeStore.selfIntro,
   }
   return buildModuleText(selectedModule.value, moduleData)
 })
 
-const applySupportedModules = new Set(['skills', 'selfIntro', 'workExperience', 'projectExperience', 'awards'])
+const applySupportedModules = new Set(['skills', 'selfIntro', 'workExperience', 'projectExperience', 'personalWorks', 'trainingExperience', 'awards', 'customSections'])
 const canApplySelectedModule = computed(() => applySupportedModules.has(selectedModule.value))
 const canUndoSelectedModule = computed(() => {
   const key = currentAppliedKey.value
@@ -230,6 +239,9 @@ const PROJECT_TECH_KEYWORDS = [
 
 const PROJECT_RESULT_PHRASE_REGEX = /从\s*\d+(?:\.\d+)?\s*(?:ms|s|秒|分钟|小时|天|周|月|年|QPS|TPS|%|倍|个|次|项|万|亿)?\s*(?:左右)?\s*(?:降至|降低到|下降到|减少到|优化到|提升至|提升到|提高到)\s*\d+(?:\.\d+)?\s*(?:ms|s|秒|分钟|小时|天|周|月|年|QPS|TPS|%|倍|个|次|项|万|亿)?/gi
 const PROJECT_METRIC_REGEX = /\d+(?:\.\d+)?\s*(?:ms|s|秒|分钟|小时|天|周|月|年|QPS|TPS|%|倍|个|次|项|w|W|万|亿|封\/(?:分钟|小时|天)|条\/s|次\/s)/g
+const BOLD_TOKEN_PATTERN = /@@BOLD_TOKEN_\d+@@/
+const BOLD_TOKEN_GLOBAL_REGEX = /@@BOLD_TOKEN_\d+@@/g
+const LEAKED_BOLD_TOKEN_FALLBACK = '待补充量化数据'
 
 function pushApplyHistory(key: string, snapshot: ApplyUndoSnapshot) {
   if (!applyHistory.value[key]) {
@@ -394,6 +406,7 @@ function sanitizeMarkdownForRender(markdownText: string): string {
   let sanitized = markdownText
     // Drop invalid bold markers like `** xxx` (space right after marker).
     .replace(/(^|\n)(\s*)\*\*(?=\s+)/g, '$1$2')
+    .replace(BOLD_TOKEN_GLOBAL_REGEX, LEAKED_BOLD_TOKEN_FALLBACK)
     // Drop boilerplate lead-ins that models occasionally prepend.
     .replace(/^\s*(?:如下|优化后如下|优化如下|优化后内容如下)\s*[：:]?\s*/i, '')
     // Drop boilerplate lines like `**优化后内容：**`.
@@ -427,7 +440,10 @@ function protectBoldTokens(text: string, tokenMap: Record<string, string>): stri
 }
 
 function wrapRegexMatchesAsBoldToken(text: string, regex: RegExp, tokenMap: Record<string, string>): string {
-  return text.replace(regex, (match) => createBoldToken(`**${match}**`, tokenMap))
+  return text.replace(regex, (match) => {
+    if (BOLD_TOKEN_PATTERN.test(match)) return match
+    return createBoldToken(`**${match}**`, tokenMap)
+  })
 }
 
 function wrapKeywordsAsBoldToken(text: string, keywords: readonly string[], tokenMap: Record<string, string>): string {
@@ -442,10 +458,19 @@ function wrapKeywordsAsBoldToken(text: string, keywords: readonly string[], toke
 
 function restoreBoldTokens(text: string, tokenMap: Record<string, string>): string {
   let output = text
-  for (const [token, raw] of Object.entries(tokenMap)) {
-    output = output.split(token).join(raw)
+  const maxIterations = Object.keys(tokenMap).length + 2
+
+  for (let i = 0; i < maxIterations && BOLD_TOKEN_PATTERN.test(output); i++) {
+    let replaced = false
+    for (const [token, raw] of Object.entries(tokenMap)) {
+      if (!output.includes(token)) continue
+      output = output.split(token).join(raw)
+      replaced = true
+    }
+    if (!replaced) break
   }
-  return output
+
+  return output.replace(BOLD_TOKEN_GLOBAL_REGEX, LEAKED_BOLD_TOKEN_FALLBACK)
 }
 
 function enhanceProjectMainWorkLineBold(lineBody: string): string {
@@ -965,6 +990,12 @@ function getModuleData(): ModuleData {
     skills: resumeStore.skills,
     workList: resumeStore.workList.map((w) => ({ ...w })),
     projectList: resumeStore.projectList.map((p) => ({ ...p })),
+    personalWorkList: resumeStore.personalWorkList.map((p) => ({ ...p })),
+    trainingList: resumeStore.trainingList.map((p) => ({ ...p })),
+    customSectionList: resumeStore.customSectionList.map((section) => ({
+      ...section,
+      items: section.items.map((item) => ({ ...item })),
+    })),
     awardList: resumeStore.awardList.map((a) => ({ ...a })),
     selfIntro: resumeStore.selfIntro,
   }
@@ -1133,6 +1164,28 @@ function handleApply() {
         }
       }
       break
+    case 'personalWorks':
+      if (resumeStore.personalWorkList.length > 0 && resumeStore.personalWorkList[0]) {
+        const target = resumeStore.personalWorkList[0]
+        undoSnapshot = {
+          previousContent: target.contribution,
+          previousPersonalWorks: resumeStore.personalWorkList.map((work) => ({ ...work })),
+        }
+        target.contribution = renderAwardDescriptionWithOriginalStyle(sanitized, target.contribution)
+        applied = true
+      }
+      break
+    case 'trainingExperience':
+      if (resumeStore.trainingList.length > 0 && resumeStore.trainingList[0]) {
+        const target = resumeStore.trainingList[0]
+        undoSnapshot = {
+          previousContent: target.description,
+          previousTrainingList: resumeStore.trainingList.map((training) => ({ ...training })),
+        }
+        target.description = renderAwardDescriptionWithOriginalStyle(sanitized, target.description)
+        applied = true
+      }
+      break
     case 'awards':
       undoSnapshot = {
         previousContent: resumeStore.awardList[0]?.description ?? '',
@@ -1171,6 +1224,26 @@ function handleApply() {
           description: content,
         })
         applied = true
+      }
+      break
+    case 'customSections':
+      if (resumeStore.customSectionList.length > 0 && resumeStore.customSectionList[0]) {
+        const section = resumeStore.customSectionList[0]
+        if (section.items.length === 0) {
+          resumeStore.addCustomSectionItem(section.id)
+        }
+        const target = section.items[0]
+        if (target) {
+          undoSnapshot = {
+            previousContent: target.description,
+            previousCustomSectionList: resumeStore.customSectionList.map((item) => ({
+              ...item,
+              items: item.items.map((entry) => ({ ...entry })),
+            })),
+          }
+          target.description = renderAwardDescriptionWithOriginalStyle(sanitized, target.description)
+          applied = true
+        }
       }
       break
     default:
@@ -1235,6 +1308,28 @@ function handleUndoApply() {
         }
       }
       break
+    case 'personalWorks':
+      if (snapshot.previousPersonalWorks) {
+        resumeStore.personalWorkList.splice(
+          0,
+          resumeStore.personalWorkList.length,
+          ...snapshot.previousPersonalWorks.map((work) => ({ ...work })),
+        )
+      } else if (resumeStore.personalWorkList.length > 0 && resumeStore.personalWorkList[0]) {
+        resumeStore.personalWorkList[0].contribution = snapshot.previousContent
+      }
+      break
+    case 'trainingExperience':
+      if (snapshot.previousTrainingList) {
+        resumeStore.trainingList.splice(
+          0,
+          resumeStore.trainingList.length,
+          ...snapshot.previousTrainingList.map((training) => ({ ...training })),
+        )
+      } else if (resumeStore.trainingList.length > 0 && resumeStore.trainingList[0]) {
+        resumeStore.trainingList[0].description = snapshot.previousContent
+      }
+      break
     case 'awards':
       if (snapshot.previousAwards) {
         resumeStore.awardList.splice(
@@ -1252,6 +1347,20 @@ function handleUndoApply() {
         }
       } else if (resumeStore.awardList.length > 0 && resumeStore.awardList[0]) {
         resumeStore.awardList[0].description = snapshot.previousContent
+      }
+      break
+    case 'customSections':
+      if (snapshot.previousCustomSectionList) {
+        resumeStore.customSectionList.splice(
+          0,
+          resumeStore.customSectionList.length,
+          ...snapshot.previousCustomSectionList.map((section) => ({
+            ...section,
+            items: section.items.map((item) => ({ ...item })),
+          })),
+        )
+      } else if (resumeStore.customSectionList.length > 0 && resumeStore.customSectionList[0]?.items[0]) {
+        resumeStore.customSectionList[0].items[0].description = snapshot.previousContent
       }
       break
     default:

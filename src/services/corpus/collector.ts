@@ -44,20 +44,20 @@ export type ProgressCallback = (progress: CollectionProgress) => void
 
 // 缓存管理器
 class CacheManager {
-  private cache = new Map<string, { data: any; timestamp: number }>()
+  private cache = new Map<string, { data: unknown; timestamp: number }>()
   private ttl = 24 * 60 * 60 * 1000 // 24小时
 
-  get(key: string): any | null {
+  get<T>(key: string): T | null {
     const item = this.cache.get(key)
     if (!item) return null
     if (Date.now() - item.timestamp > this.ttl) {
       this.cache.delete(key)
       return null
     }
-    return item.data
+    return item.data as T
   }
 
-  set(key: string, data: any): void {
+  set<T>(key: string, data: T): void {
     this.cache.set(key, { data, timestamp: Date.now() })
   }
 
@@ -67,11 +67,11 @@ class CacheManager {
 }
 
 // 错误重试工具函数
-async function fetchWithRetry(
-  fetchFn: () => Promise<any>,
+async function fetchWithRetry<T>(
+  fetchFn: () => Promise<T>,
   maxRetries = 3,
   delayMs = 1000
-): Promise<any> {
+): Promise<T> {
   for (let i = 0; i < maxRetries; i++) {
     try {
       return await fetchFn()
@@ -116,7 +116,7 @@ export class CorpusCollector {
     const cacheKey = queries.join('|')
     
     // 检查缓存
-    const cached = this.cache.get(cacheKey)
+    const cached = this.cache.get<CollectorResult>(cacheKey)
     if (cached) {
       this.reportProgress({
         stage: 'complete',
@@ -157,9 +157,9 @@ export class CorpusCollector {
       message: '正在解析数据...',
     })
 
-    for (let i = 0; i < results.length; i++) {
-      const result = results[i]
+    for (const [i, result] of results.entries()) {
       const connector = this.connectors[i]
+      if (!connector) continue
 
       if (result.status === 'fulfilled') {
         const searchResult = result.value

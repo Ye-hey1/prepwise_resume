@@ -9,5 +9,7 @@ export const WORKPLACE_GENERAL_TEMPLATE: ResumeTemplateDefinition = {
   name: '通用职场简历',
   previewImage,
   tags: ['通用', '职场', '社招', '高级'],
+  category: 'tech',
+  description: '通用职场风格，适合技术开发岗位',
   component: ResumeTemplate,
 }

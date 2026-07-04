@@ -9,5 +9,7 @@ export const BLUE_LINEAR_TEMPLATE: ResumeTemplateDefinition = {
   name: '蓝色线性模板',
   previewImage,
   tags: ['蓝色', '线性', '经典', '社招'],
+  category: 'ats',
+  description: '专业蓝色线性风格，适合大多数岗位',
   component: ResumeTemplate,
 }

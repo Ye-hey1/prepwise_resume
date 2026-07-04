@@ -9,5 +9,7 @@ export const BLUE_SPLIT_PRO_TEMPLATE: ResumeTemplateDefinition = {
   name: '蓝色精英专业版',
   previewImage,
   tags: ['双栏', '高级', '精英', '管理岗'],
+  category: 'management',
+  description: '专业双栏布局，突出管理和专业能力',
   component: ResumeTemplate,
 }

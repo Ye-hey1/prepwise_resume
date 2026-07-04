@@ -100,7 +100,10 @@ const expanded = reactive<Record<string, boolean>>({
   skills: false,
   workExperience: false,
   projectExperience: false,
+  personalWorks: false,
+  trainingExperience: false,
   awards: false,
+  customSections: false,
   selfIntro: false,
 })
 
@@ -110,7 +113,10 @@ const editorMap: Record<string, Component> = {
   skills: defineAsyncComponent(() => import('./editors/SkillsEditor.vue')),
   workExperience: defineAsyncComponent(() => import('./editors/WorkExperienceEditor.vue')),
   projectExperience: defineAsyncComponent(() => import('./editors/ProjectExperienceEditor.vue')),
+  personalWorks: defineAsyncComponent(() => import('./editors/PersonalWorksEditor.vue')),
+  trainingExperience: defineAsyncComponent(() => import('./editors/TrainingExperienceEditor.vue')),
   awards: defineAsyncComponent(() => import('./editors/AwardsEditor.vue')),
+  customSections: defineAsyncComponent(() => import('./editors/CustomSectionsEditor.vue')),
   selfIntro: defineAsyncComponent(() => import('./editors/SelfIntroEditor.vue')),
 }
 
@@ -172,8 +178,45 @@ const moduleCompletion = computed<Record<string, number>>(() => {
     ? scoreByFilled([firstProject.name, firstProject.role, firstProject.startDate, firstProject.mainWork])
     : 0
 
+  const firstPersonalWork = store.personalWorkList.find((p) =>
+    [p.name, p.type, p.link, p.description, p.contribution].some((value) => value?.trim())
+  )
+  const personalWorksScore = firstPersonalWork
+    ? scoreByFilled([
+        firstPersonalWork.name,
+        firstPersonalWork.type,
+        firstPersonalWork.link,
+        firstPersonalWork.description,
+        firstPersonalWork.contribution,
+      ])
+    : 0
+
+  const firstTraining = store.trainingList.find((t) =>
+    [t.institution, t.course, t.credential, t.description, t.outcome].some((value) => value?.trim())
+  )
+  const trainingScore = firstTraining
+    ? scoreByFilled([
+        firstTraining.institution,
+        firstTraining.course,
+        firstTraining.credential,
+        firstTraining.description,
+      ])
+    : 0
+
   const firstAward = store.awardList.find((a) => [a.name, a.date].some((value) => value?.trim()))
   const awardsScore = firstAward ? scoreByFilled([firstAward.name, firstAward.date]) : 0
+  const firstCustomItem = store.customSectionList
+    .flatMap((section) => section.items.map((item) => ({ sectionTitle: section.title, ...item })))
+    .find((item) =>
+      [item.sectionTitle, item.title, item.subtitle, item.link, item.description].some((value) => value?.trim())
+    )
+  const customSectionsScore = firstCustomItem
+    ? scoreByFilled([
+        firstCustomItem.sectionTitle,
+        firstCustomItem.title,
+        firstCustomItem.description,
+      ])
+    : 0
 
   return {
     basicInfo: basicInfoScore,
@@ -181,7 +224,10 @@ const moduleCompletion = computed<Record<string, number>>(() => {
     skills: hasTextContent(store.skills) ? 1 : 0,
     workExperience: workScore,
     projectExperience: projectScore,
+    personalWorks: personalWorksScore,
+    trainingExperience: trainingScore,
     awards: awardsScore,
+    customSections: customSectionsScore,
     selfIntro: hasTextContent(store.selfIntro) ? 1 : 0,
   }
 })

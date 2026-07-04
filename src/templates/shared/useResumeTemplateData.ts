@@ -19,6 +19,9 @@ export function useResumeTemplateData() {
       Boolean(store.skills) ||
       store.workList.some((w) => w.company) ||
       store.projectList.some((p) => p.name) ||
+      store.personalWorkList.some(hasPersonalWorkContent) ||
+      store.trainingList.some(hasTrainingContent) ||
+      store.customSectionList.some(hasCustomSectionContent) ||
       store.awardList.some((a) => a.name) ||
       Boolean(store.selfIntro)
   )
@@ -104,6 +107,104 @@ export function useResumeTemplateData() {
       .filter(Boolean)
   }
 
+  function hasPersonalWorkContent(work: {
+    name?: string
+    type?: string
+    link?: string
+    description?: string
+    contribution?: string
+    techStack?: string
+    outcome?: string
+  }): boolean {
+    return [
+      work.name,
+      work.type,
+      work.link,
+      work.description,
+      work.contribution,
+      work.techStack,
+      work.outcome,
+    ].some((value) => value?.trim())
+  }
+
+  function personalWorkMetaParts(work: { type?: string; techStack?: string; outcome?: string }): string[] {
+    return [work.type, work.techStack, work.outcome]
+      .map((value) => value?.trim() ?? '')
+      .filter(Boolean)
+  }
+
+  function hasTrainingContent(training: {
+    institution?: string
+    course?: string
+    credential?: string
+    startDate?: string
+    endDate?: string
+    location?: string
+    description?: string
+    outcome?: string
+  }): boolean {
+    return [
+      training.institution,
+      training.course,
+      training.credential,
+      training.startDate,
+      training.endDate,
+      training.location,
+      training.description,
+      training.outcome,
+    ].some((value) => value?.trim())
+  }
+
+  function trainingMetaParts(training: {
+    credential?: string
+    location?: string
+    startDate?: string
+    endDate?: string
+  }): string[] {
+    return [
+      training.credential,
+      training.location,
+      dateRangeText(training.startDate ?? '', training.endDate ?? ''),
+    ]
+      .map((value) => value?.trim() ?? '')
+      .filter(Boolean)
+  }
+
+  function hasCustomSectionItemContent(item: {
+    title?: string
+    subtitle?: string
+    date?: string
+    link?: string
+    description?: string
+  }): boolean {
+    return [
+      item.title,
+      item.subtitle,
+      item.date,
+      item.link,
+      item.description,
+    ].some((value) => value?.trim())
+  }
+
+  function hasCustomSectionContent(section: {
+    title?: string
+    items?: Array<{
+      title?: string
+      subtitle?: string
+      date?: string
+      link?: string
+      description?: string
+    }>
+  }): boolean {
+    return Boolean(section.items?.some(hasCustomSectionItemContent))
+  }
+
+  function customItemMetaParts(item: { subtitle?: string; date?: string }): string[] {
+    return [item.subtitle, dateText(item.date ?? '')]
+      .map((value) => value?.trim() ?? '')
+      .filter(Boolean)
+  }
+
   function linkHref(value: string): string {
     return toHref(value)
   }
@@ -128,6 +229,13 @@ export function useResumeTemplateData() {
     educationTags,
     workTitleParts,
     workSideParts,
+    hasPersonalWorkContent,
+    personalWorkMetaParts,
+    hasTrainingContent,
+    trainingMetaParts,
+    hasCustomSectionContent,
+    hasCustomSectionItemContent,
+    customItemMetaParts,
     linkHref,
     dateText,
     dateRangeText,

@@ -1,5 +1,5 @@
 import { stripHtml, safeJsonStringify } from '@/services/stream'
-import type { AwardEntry, BasicInfo, EducationEntry, ProjectEntry, WorkEntry } from '@/stores/resume'
+import type { AwardEntry, BasicInfo, CustomSection, EducationEntry, PersonalWorkEntry, ProjectEntry, TrainingEntry, WorkEntry } from '@/stores/resume'
 import type { CompletedJdReviewContext } from './types'
 
 export interface ResumeReviewSourceData {
@@ -8,6 +8,9 @@ export interface ResumeReviewSourceData {
   skills?: string | null
   workList?: Array<Partial<WorkEntry> | Record<string, unknown> | null | string | number | boolean> | null
   projectList?: Array<Partial<ProjectEntry> | Record<string, unknown> | null | string | number | boolean> | null
+  personalWorkList?: Array<Partial<PersonalWorkEntry> | Record<string, unknown> | null | string | number | boolean> | null
+  trainingList?: Array<Partial<TrainingEntry> | Record<string, unknown> | null | string | number | boolean> | null
+  customSectionList?: Array<Partial<CustomSection> | Record<string, unknown> | null | string | number | boolean> | null
   awardList?: Array<Partial<AwardEntry> | Record<string, unknown> | null | string | number | boolean> | null
   selfIntro?: string | null
 }
@@ -188,6 +191,103 @@ function formatProjects(data: ResumeReviewSourceData): string {
   return section('项目经历', entries)
 }
 
+const personalWorkFields: FieldSpec[] = [
+  { key: 'name', label: '作品名称' },
+  { key: 'type', label: '作品类型' },
+  { key: 'link', label: '作品链接' },
+  { key: 'techStack', label: '技术栈/工具' },
+  { key: 'description', label: '作品简介', rich: true },
+  { key: 'contribution', label: '我的贡献', rich: true },
+  { key: 'outcome', label: '成果数据', rich: true },
+]
+
+function formatPersonalWorks(data: ResumeReviewSourceData): string {
+  const entries = list(data.personalWorkList)
+    .filter((work) => hasRecordContent(work, personalWorkFields))
+    .map((item, index) => {
+      const work = record(item)
+      const details = [
+        labeled('作品名称', work.name),
+        labeled('作品类型', work.type),
+        labeled('作品链接', work.link),
+        labeled('技术栈/工具', work.techStack),
+        labeled('作品简介', work.description, true),
+        labeled('我的贡献', work.contribution, true),
+        labeled('成果数据', work.outcome, true),
+      ].filter(Boolean)
+      return entry(`个人作品 ${index + 1}`, details)
+    })
+    .filter(Boolean)
+
+  return section('个人作品', entries)
+}
+
+const trainingFields: FieldSpec[] = [
+  { key: 'institution', label: '培训机构' },
+  { key: 'course', label: '课程名称' },
+  { key: 'credential', label: '证书/资质' },
+  { key: 'location', label: '地点/形式' },
+  { key: 'description', label: '培训内容', rich: true },
+  { key: 'outcome', label: '成果收获', rich: true },
+  { key: 'startDate', label: '开始时间' },
+  { key: 'endDate', label: '结束时间' },
+]
+
+function formatTraining(data: ResumeReviewSourceData): string {
+  const entries = list(data.trainingList)
+    .filter((training) => hasRecordContent(training, trainingFields))
+    .map((item, index) => {
+      const training = record(item)
+      const details = [
+        labeled('培训机构', training.institution),
+        labeled('课程名称', training.course),
+        labeled('证书/资质', training.credential),
+        labeled('时间', dateRange(training.startDate, training.endDate)),
+        labeled('地点/形式', training.location),
+        labeled('培训内容', training.description, true),
+        labeled('成果收获', training.outcome, true),
+      ].filter(Boolean)
+      return entry(`培训经历 ${index + 1}`, details)
+    })
+    .filter(Boolean)
+
+  return section('培训经历', entries)
+}
+
+const customItemFields: FieldSpec[] = [
+  { key: 'title', label: '标题' },
+  { key: 'subtitle', label: '补充信息' },
+  { key: 'date', label: '时间' },
+  { key: 'link', label: '链接' },
+  { key: 'description', label: '描述', rich: true },
+]
+
+function formatCustomSections(data: ResumeReviewSourceData): string {
+  const sections = list(data.customSectionList)
+    .map((rawSection, sectionIndex) => {
+      const customSection = record(rawSection)
+      const title = text(customSection.title) || `自定义模块 ${sectionIndex + 1}`
+      const entries = list(customSection.items)
+        .filter((item) => hasRecordContent(item, customItemFields))
+        .map((item, itemIndex) => {
+          const customItem = record(item)
+          const details = [
+            labeled('标题', customItem.title),
+            labeled('补充信息', customItem.subtitle),
+            labeled('时间', customItem.date),
+            labeled('链接', customItem.link),
+            labeled('描述', customItem.description, true),
+          ].filter(Boolean)
+          return entry(`${title} ${itemIndex + 1}`, details)
+        })
+        .filter(Boolean)
+      return entries.length ? section(title, entries) : ''
+    })
+    .filter(Boolean)
+
+  return sections.join('\n\n')
+}
+
 const awardFields: FieldSpec[] = [
   { key: 'name', label: '奖项' },
   { key: 'date', label: '时间' },
@@ -218,6 +318,9 @@ export function formatResumeForReview(data: ResumeReviewSourceData): string {
     section('专业技能', labeled('技能内容', data.skills, true)),
     formatWork(data),
     formatProjects(data),
+    formatPersonalWorks(data),
+    formatTraining(data),
+    formatCustomSections(data),
     formatAwards(data),
     section('自我评价', labeled('自我评价内容', data.selfIntro, true)),
   ].filter(Boolean).join('\n\n')
@@ -229,8 +332,13 @@ export function hasEnoughResumeContent(data: ResumeReviewSourceData): boolean {
   const hasSkills = Boolean(richText(data.skills))
   const hasWork = list(data.workList).some((work) => hasRecordContent(work, workFields))
   const hasProject = list(data.projectList).some((project) => hasRecordContent(project, projectFields))
+  const hasPersonalWork = list(data.personalWorkList).some((work) => hasRecordContent(work, personalWorkFields))
+  const hasTraining = list(data.trainingList).some((training) => hasRecordContent(training, trainingFields))
+  const hasCustomSection = list(data.customSectionList).some((rawSection) =>
+    list(record(rawSection).items).some((item) => hasRecordContent(item, customItemFields))
+  )
 
-  return hasBasicTarget && (hasSkills || hasWork || hasProject)
+  return hasBasicTarget && (hasSkills || hasWork || hasProject || hasPersonalWork || hasTraining || hasCustomSection)
 }
 
 export function formatCompletedJdContext(context: CompletedJdReviewContext | null): string {

@@ -48,12 +48,12 @@ const metrics = computed(() => [
 <template>
   <section class="review-score-hero">
     <div class="hero-copy">
-      <span class="hero-kicker">AI 简历审查</span>
+      <span class="hero-kicker">综合结果</span>
       <div class="hero-title-row">
-        <h2>简历审查打分</h2>
+        <h2>评分概览</h2>
         <span class="verdict-pill" :class="`tone-${verdict.tone}`">{{ verdict.label }}</span>
       </div>
-      <p>基于简历完整度、表达质量与岗位匹配度，生成可执行的优化优先级。</p>
+      <p>评分会结合简历完整度、表达证据、岗位匹配度和可执行优化任务。</p>
     </div>
 
     <div class="score-block" :class="{ loading }">
@@ -81,12 +81,12 @@ const metrics = computed(() => [
 <style scoped>
 .review-score-hero {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 14px 18px;
-  align-items: center;
-  padding: 18px;
+  grid-template-columns: minmax(0, 1fr) minmax(132px, auto);
+  gap: 14px;
+  align-items: stretch;
+  padding: 16px;
   border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: 12px;
   background: var(--bg-card);
   min-width: 0;
 }
@@ -98,7 +98,7 @@ const metrics = computed(() => [
 .hero-kicker {
   display: block;
   color: var(--primary-600);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
   line-height: 1.4;
 }
@@ -115,9 +115,11 @@ const metrics = computed(() => [
   margin: 0;
   min-width: 0;
   color: var(--text-primary);
-  font-size: 20px;
-  font-weight: 800;
+  font-size: 22px;
+  font-weight: 900;
   line-height: 1.25;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
   overflow-wrap: anywhere;
 }
 
@@ -179,9 +181,14 @@ const metrics = computed(() => [
     "label label"
     "score unit";
   align-items: end;
-  justify-content: end;
+  align-content: center;
+  justify-content: center;
   column-gap: 4px;
-  min-width: 112px;
+  min-width: 132px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-card-muted);
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
 }
@@ -197,7 +204,7 @@ const metrics = computed(() => [
 
 .score-block strong {
   grid-area: score;
-  font-size: 40px;
+  font-size: 44px;
   font-weight: 900;
   line-height: 1;
 }
@@ -228,7 +235,7 @@ const metrics = computed(() => [
   padding: 10px 12px;
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  background: var(--bg-card-muted);
+  background: transparent;
 }
 
 .metric-cell dt {
@@ -245,7 +252,7 @@ const metrics = computed(() => [
   margin: 3px 0 0;
   min-width: 0;
   color: var(--text-primary);
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 850;
   line-height: 1.25;
 }

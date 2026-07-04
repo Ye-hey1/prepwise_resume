@@ -11,7 +11,10 @@ export type ResumeReviewModuleKey =
   | 'skills'
   | 'workExperience'
   | 'projectExperience'
+  | 'personalWorks'
+  | 'trainingExperience'
   | 'awards'
+  | 'customSections'
   | 'selfIntro'
 
 export interface ReviewCategory {

@@ -49,8 +49,12 @@ const priorityMap: Record<ReviewTask['priority'], { label: string; tone: string 
 .review-action-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--bg-card);
 }
 
 .section-head {
@@ -65,7 +69,7 @@ const priorityMap: Record<ReviewTask['priority'], { label: string; tone: string 
   margin: 0;
   min-width: 0;
   color: var(--text-primary);
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 800;
   line-height: 1.35;
   overflow-wrap: anywhere;
@@ -73,7 +77,11 @@ const priorityMap: Record<ReviewTask['priority'], { label: string; tone: string 
 
 .section-head span {
   flex: 0 0 auto;
-  color: var(--text-muted);
+  min-height: 24px;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: var(--bg-card-muted);
+  color: var(--text-secondary);
   font-size: 12px;
   font-weight: 800;
   line-height: 1.4;
@@ -87,13 +95,13 @@ const priorityMap: Record<ReviewTask['priority'], { label: string; tone: string 
 
 .task-row {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) 76px;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
   align-items: start;
   gap: 10px;
-  padding: 12px;
+  padding: 12px 12px 12px 10px;
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  background: var(--bg-card);
+  background: var(--bg-card-muted);
   min-width: 0;
 }
 
@@ -138,7 +146,7 @@ const priorityMap: Record<ReviewTask['priority'], { label: string; tone: string 
   margin: 0;
   min-width: 0;
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 800;
   line-height: 1.45;
   overflow-wrap: anywhere;
@@ -157,7 +165,7 @@ const priorityMap: Record<ReviewTask['priority'], { label: string; tone: string 
 }
 
 .task-suggestion {
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 
 .edit-btn {
@@ -170,7 +178,7 @@ const priorityMap: Record<ReviewTask['priority'], { label: string; tone: string 
   padding: 0 10px;
   border: 1px solid var(--border-accent);
   border-radius: 8px;
-  background: rgba(43, 123, 184, 0.08);
+  background: var(--bg-card);
   color: var(--primary-600);
   font-size: 12px;
   font-weight: 850;
@@ -185,7 +193,7 @@ const priorityMap: Record<ReviewTask['priority'], { label: string; tone: string 
 
 .empty-text {
   margin: 0;
-  padding: 18px 12px;
+  padding: 22px 12px;
   border: 1px dashed var(--border-color);
   border-radius: 8px;
   color: var(--text-muted);

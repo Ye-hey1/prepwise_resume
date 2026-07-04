@@ -65,12 +65,13 @@ function formatDate(value: string): string {
 .review-history-panel {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
   min-height: 0;
+  height: 100%;
   padding: 14px;
   border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: 12px;
   background: var(--bg-card);
 }
 
@@ -86,7 +87,7 @@ function formatDate(value: string): string {
   margin: 0;
   min-width: 0;
   color: var(--text-primary);
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 800;
   line-height: 1.35;
   overflow-wrap: anywhere;
@@ -94,7 +95,11 @@ function formatDate(value: string): string {
 
 .history-head span {
   flex: 0 0 auto;
-  color: var(--text-muted);
+  min-height: 24px;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: var(--bg-card-muted);
+  color: var(--text-secondary);
   font-size: 12px;
   font-weight: 800;
   line-height: 1.4;
@@ -104,8 +109,8 @@ function formatDate(value: string): string {
   display: flex;
   flex-direction: column;
   gap: 7px;
+  flex: 1;
   min-height: 0;
-  max-height: 420px;
   overflow: auto;
   padding-right: 2px;
 }
@@ -131,7 +136,7 @@ function formatDate(value: string): string {
 
 .history-item.active {
   border-color: var(--border-accent);
-  background: rgba(43, 123, 184, 0.08);
+  background: rgba(43, 123, 184, 0.1);
 }
 
 .item-time {
@@ -195,6 +200,10 @@ function formatDate(value: string): string {
 
 .empty-text {
   margin: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 18px 12px;
   border: 1px dashed var(--border-color);
   border-radius: 8px;
@@ -205,10 +214,6 @@ function formatDate(value: string): string {
 }
 
 @media (max-width: 520px) {
-  .history-list {
-    max-height: 320px;
-  }
-
   .history-item {
     grid-template-columns: 1fr;
     grid-template-areas:

@@ -52,8 +52,12 @@ defineProps<{
 .review-category-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--bg-card);
 }
 
 .section-head {
@@ -68,7 +72,7 @@ defineProps<{
   margin: 0;
   min-width: 0;
   color: var(--text-primary);
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 800;
   line-height: 1.35;
   overflow-wrap: anywhere;
@@ -76,7 +80,11 @@ defineProps<{
 
 .section-head span {
   flex: 0 0 auto;
-  color: var(--text-muted);
+  min-height: 24px;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: var(--bg-card-muted);
+  color: var(--text-secondary);
   font-size: 12px;
   font-weight: 800;
   line-height: 1.4;
@@ -90,12 +98,12 @@ defineProps<{
 
 .category-row {
   display: grid;
-  grid-template-columns: 72px minmax(0, 1fr);
+  grid-template-columns: 68px minmax(0, 1fr);
   gap: 12px;
   padding: 12px;
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  background: var(--bg-card);
+  background: var(--bg-card-muted);
   min-width: 0;
 }
 
@@ -103,13 +111,18 @@ defineProps<{
   display: flex;
   flex-direction: column;
   justify-content: center;
+  align-items: flex-start;
   min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-card);
   font-variant-numeric: tabular-nums;
 }
 
 .category-score strong {
   color: var(--text-primary);
-  font-size: 24px;
+  font-size: 25px;
   font-weight: 900;
   line-height: 1;
 }
@@ -137,7 +150,7 @@ defineProps<{
   margin: 0;
   min-width: 0;
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 800;
   line-height: 1.4;
   overflow-wrap: anywhere;
@@ -189,7 +202,7 @@ defineProps<{
 
 .empty-text {
   margin: 0;
-  padding: 18px 12px;
+  padding: 22px 12px;
   border: 1px dashed var(--border-color);
   border-radius: 8px;
   color: var(--text-muted);

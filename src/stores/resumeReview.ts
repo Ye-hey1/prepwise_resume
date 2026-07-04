@@ -37,6 +37,7 @@ const MODULE_KEYS: ResumeReviewModuleKey[] = [
   'skills',
   'workExperience',
   'projectExperience',
+  'personalWorks',
   'awards',
   'selfIntro',
 ]

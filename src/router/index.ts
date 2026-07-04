@@ -3,6 +3,11 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
+    name: 'workspace-dashboard',
+    component: () => import('@/views/WorkspaceDashboardView.vue'),
+  },
+  {
+    path: '/resume',
     name: 'resume-editor',
     component: () => import('@/views/ResumeEditorView.vue'),
   },
@@ -15,6 +20,16 @@ const routes: RouteRecordRaw[] = [
     path: '/jd-analysis',
     name: 'jd-analysis',
     component: () => import('@/views/JdAnalysisView.vue'),
+  },
+  {
+    path: '/applications',
+    name: 'application-tracker',
+    component: () => import('@/views/ApplicationTrackerView.vue'),
+  },
+  {
+    path: '/training',
+    name: 'training-center',
+    component: () => import('@/views/TrainingCenterView.vue'),
   },
   {
     path: '/resume-import',

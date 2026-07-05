@@ -5,6 +5,8 @@
 
 export type PromptCategory =
   | 'resume-optimize'
+  | 'resume-review'
+  | 'project-sop'
   | 'jd-extract'
   | 'jd-match'
   | 'jd-overview'
@@ -14,8 +16,11 @@ export type PromptCategory =
   | 'jd-optimize'
   | 'interview-candidate'
   | 'interview-interviewer'
+  | 'interview-hint'
+  | 'interview-drill'
+  | 'interview-evaluation'
+  | 'interview-coaching'
   | 'resume-import'
-  | 'resume-assistant'
 
 export interface PromptVersion {
   id: string
@@ -69,6 +74,13 @@ export function getActivePromptVersionId(category: PromptCategory): string {
   return template?.activeVersionId ?? ''
 }
 
+/** 获取指定类别的活跃版本元信息 */
+export function getActivePromptVersion(category: PromptCategory): PromptVersion | null {
+  const template = promptRegistry.get(category)
+  if (!template?.activeVersionId) return null
+  return template.versions.find(v => v.id === template.activeVersionId) ?? null
+}
+
 /** 切换活跃版本 */
 export function setActivePromptVersion(category: PromptCategory, versionId: string) {
   const template = promptRegistry.get(category)
@@ -96,6 +108,7 @@ export function getPromptVersions(category: PromptCategory): PromptVersion[] {
 const PREF_STORAGE_KEY = 'prepwise-prompt-preferences'
 
 function savePromptPreferences() {
+  if (typeof localStorage === 'undefined') return
   const prefs: Record<string, string> = {}
   for (const [category, template] of promptRegistry) {
     if (template.activeVersionId) {
@@ -107,6 +120,7 @@ function savePromptPreferences() {
 
 export function loadPromptPreferences() {
   try {
+    if (typeof localStorage === 'undefined') return
     const raw = localStorage.getItem(PREF_STORAGE_KEY)
     if (!raw) return
     const prefs = JSON.parse(raw) as Record<string, string>
@@ -128,6 +142,22 @@ registerPromptVersion('resume-optimize', {
   version: '1.0',
   label: '标准版',
   description: '默认简历优化 prompt，三版本输出（标准/数据驱动/专家架构）',
+  isDefault: true,
+})
+
+registerPromptVersion('resume-review', {
+  id: 'v1-standard',
+  version: '1.0',
+  label: '标准版',
+  description: '默认简历审查 prompt，包含通用质量与 JD 适配评分规约',
+  isDefault: true,
+})
+
+registerPromptVersion('project-sop', {
+  id: 'v1-dossier-grounded',
+  version: '1.0',
+  label: '档案驱动版',
+  description: '基于结构化项目档案生成 SOP、宣讲稿、深挖问答和路线图',
   isDefault: true,
 })
 
@@ -203,19 +233,43 @@ registerPromptVersion('interview-interviewer', {
   isDefault: true,
 })
 
+registerPromptVersion('interview-hint', {
+  id: 'v1-standard',
+  version: '1.0',
+  label: '标准版',
+  description: '默认面试答题提示 prompt',
+  isDefault: true,
+})
+
+registerPromptVersion('interview-drill', {
+  id: 'v1-standard',
+  version: '1.0',
+  label: '标准版',
+  description: '默认专项训练题生成 prompt',
+  isDefault: true,
+})
+
+registerPromptVersion('interview-evaluation', {
+  id: 'v1-standard',
+  version: '1.0',
+  label: '标准版',
+  description: '默认专项训练评估 prompt',
+  isDefault: true,
+})
+
+registerPromptVersion('interview-coaching', {
+  id: 'v1-standard',
+  version: '1.0',
+  label: '标准版',
+  description: '默认观摩学习 coaching prompt',
+  isDefault: true,
+})
+
 registerPromptVersion('resume-import', {
   id: 'v1-standard',
   version: '1.0',
   label: '标准版',
   description: '默认简历导入解析 prompt',
-  isDefault: true,
-})
-
-registerPromptVersion('resume-assistant', {
-  id: 'v1-standard',
-  version: '1.0',
-  label: '标准版',
-  description: '默认简历助手 prompt',
   isDefault: true,
 })
 

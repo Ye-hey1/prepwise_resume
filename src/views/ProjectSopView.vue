@@ -38,6 +38,7 @@ const isGenerating = ref(false)
 const streamText = ref('')
 const errorText = ref('')
 let abortController: AbortController | null = null
+let lastImportOpenAt = 0
 
 const config = computed(() => aiConfigStore.getConfigForFeature('default'))
 const hasAiConfig = computed(() => Boolean(
@@ -101,6 +102,9 @@ function createBlankDossier() {
 }
 
 function openImportDialog() {
+  const now = Date.now()
+  if (showImportDialog.value && now - lastImportOpenAt < 600) return
+  lastImportOpenAt = now
   showImportDialog.value = true
   if (!resumeProjects.value.length) {
     toast.info('当前简历没有可导入项目，也可以新建空白档案')
@@ -309,6 +313,34 @@ async function saveQuestionsToBank(questions: ProjectSopQuestion[]) {
 
       <p v-if="errorText" class="error-note">{{ errorText }}</p>
 
+      <section v-if="showImportDialog" class="inline-import-panel">
+        <header>
+          <div>
+            <p>从简历项目导入</p>
+            <h2>选择一个项目作为档案起点</h2>
+          </div>
+          <button type="button" @click="showImportDialog = false">收起</button>
+        </header>
+
+        <div v-if="resumeProjects.length" class="import-list">
+          <button
+            v-for="project in resumeProjects"
+            :key="project.id"
+            type="button"
+            @click="importResumeProject(project.id)"
+          >
+            <strong>{{ project.name || '未命名项目' }}</strong>
+            <span>{{ project.role || '未填写角色' }}</span>
+          </button>
+        </div>
+        <div v-else class="import-empty">
+          <p>当前简历里还没有可导入的项目经历。</p>
+          <button type="button" @click="createBlankDossier(); showImportDialog = false">
+            新建空白档案
+          </button>
+        </div>
+      </section>
+
       <ProjectSopValidationPanel :validation="activeValidation" />
 
       <div class="form-scroll">
@@ -328,37 +360,6 @@ async function saveQuestionsToBank(questions: ProjectSopQuestion[]) {
       />
     </div>
 
-    <Teleport to="body">
-      <div v-if="showImportDialog" class="modal-backdrop project-sop-import-modal" @click.self="showImportDialog = false">
-        <section class="import-modal" role="dialog" aria-modal="true" aria-label="从简历项目导入">
-          <header>
-            <div>
-              <p>从简历项目导入</p>
-              <h2>选择一个项目作为档案起点</h2>
-            </div>
-            <button type="button" @click="showImportDialog = false">关闭</button>
-          </header>
-
-          <div v-if="resumeProjects.length" class="import-list">
-            <button
-              v-for="project in resumeProjects"
-              :key="project.id"
-              type="button"
-              @click="importResumeProject(project.id)"
-            >
-              <strong>{{ project.name || '未命名项目' }}</strong>
-              <span>{{ project.role || '未填写角色' }}</span>
-            </button>
-          </div>
-          <div v-else class="import-empty">
-            <p>当前简历里还没有可导入的项目经历。</p>
-            <button type="button" @click="createBlankDossier(); showImportDialog = false">
-              新建空白档案
-            </button>
-          </div>
-        </section>
-      </div>
-    </Teleport>
   </section>
 </template>
 
@@ -392,7 +393,7 @@ async function saveQuestionsToBank(questions: ProjectSopQuestion[]) {
 }
 
 .topbar p,
-.import-modal header p {
+.inline-import-panel header p {
   margin: 0 0 4px;
   font-size: 0.76rem;
   font-weight: 700;
@@ -400,7 +401,7 @@ async function saveQuestionsToBank(questions: ProjectSopQuestion[]) {
 }
 
 .topbar h1,
-.import-modal header h2 {
+.inline-import-panel header h2 {
   margin: 0;
   font-size: 1.2rem;
   color: var(--text-primary);
@@ -415,7 +416,7 @@ async function saveQuestionsToBank(questions: ProjectSopQuestion[]) {
 }
 
 .topbar-actions button,
-.import-modal button,
+.inline-import-panel button,
 .import-list button {
   min-height: 34px;
   padding: 0 12px;
@@ -427,7 +428,7 @@ async function saveQuestionsToBank(questions: ProjectSopQuestion[]) {
 }
 
 .topbar-actions button:hover:not(:disabled),
-.import-modal button:hover,
+.inline-import-panel button:hover,
 .import-list button:hover {
   border-color: var(--primary-300);
   background: var(--primary-50);
@@ -469,28 +470,15 @@ async function saveQuestionsToBank(questions: ProjectSopQuestion[]) {
   margin: 14px 20px 0;
 }
 
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: calc(var(--z-modal, 1000) + 20);
-  display: grid;
-  place-items: center;
-  padding: 20px;
-  background: var(--bg-overlay);
-}
-
-.import-modal {
-  width: min(560px, 100%);
-  max-height: min(720px, 92dvh);
-  display: flex;
-  flex-direction: column;
+.inline-import-panel {
+  margin: 14px 20px 0;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   background: var(--bg-card);
   overflow: hidden;
 }
 
-.import-modal header {
+.inline-import-panel header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;

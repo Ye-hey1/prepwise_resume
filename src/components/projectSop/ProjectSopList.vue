@@ -37,7 +37,12 @@ function formatDate(value: string): string {
       </button>
     </div>
 
-    <button type="button" class="import-btn" @click="emit('import-resume-project')">
+    <button
+      type="button"
+      class="import-btn"
+      @click="emit('import-resume-project')"
+      @pointerdown.left.prevent="emit('import-resume-project')"
+    >
       从简历项目导入
     </button>
 

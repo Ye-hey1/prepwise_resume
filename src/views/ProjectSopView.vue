@@ -100,6 +100,13 @@ function createBlankDossier() {
   projectSopStore.createBlankDossier()
 }
 
+function openImportDialog() {
+  showImportDialog.value = true
+  if (!resumeProjects.value.length) {
+    toast.info('当前简历没有可导入项目，也可以新建空白档案')
+  }
+}
+
 function importResumeProject(projectId: string) {
   const project = resumeStore.projectList.find(item => item.id === projectId)
   if (!project) return
@@ -272,7 +279,7 @@ async function saveQuestionsToBank(questions: ProjectSopQuestion[]) {
       @create-blank="createBlankDossier"
       @delete="deleteDossier"
       @duplicate="duplicateDossier"
-      @import-resume-project="showImportDialog = true"
+      @import-resume-project="openImportDialog"
       @select="projectSopStore.setActiveDossier"
     />
 
@@ -321,35 +328,37 @@ async function saveQuestionsToBank(questions: ProjectSopQuestion[]) {
       />
     </div>
 
-    <div v-if="showImportDialog" class="modal-backdrop" @click.self="showImportDialog = false">
-      <section class="import-modal" role="dialog" aria-modal="true" aria-label="从简历项目导入">
-        <header>
-          <div>
-            <p>从简历项目导入</p>
-            <h2>选择一个项目作为档案起点</h2>
-          </div>
-          <button type="button" @click="showImportDialog = false">关闭</button>
-        </header>
+    <Teleport to="body">
+      <div v-if="showImportDialog" class="modal-backdrop project-sop-import-modal" @click.self="showImportDialog = false">
+        <section class="import-modal" role="dialog" aria-modal="true" aria-label="从简历项目导入">
+          <header>
+            <div>
+              <p>从简历项目导入</p>
+              <h2>选择一个项目作为档案起点</h2>
+            </div>
+            <button type="button" @click="showImportDialog = false">关闭</button>
+          </header>
 
-        <div v-if="resumeProjects.length" class="import-list">
-          <button
-            v-for="project in resumeProjects"
-            :key="project.id"
-            type="button"
-            @click="importResumeProject(project.id)"
-          >
-            <strong>{{ project.name || '未命名项目' }}</strong>
-            <span>{{ project.role || '未填写角色' }}</span>
-          </button>
-        </div>
-        <div v-else class="import-empty">
-          <p>当前简历里还没有可导入的项目经历。</p>
-          <button type="button" @click="createBlankDossier(); showImportDialog = false">
-            新建空白档案
-          </button>
-        </div>
-      </section>
-    </div>
+          <div v-if="resumeProjects.length" class="import-list">
+            <button
+              v-for="project in resumeProjects"
+              :key="project.id"
+              type="button"
+              @click="importResumeProject(project.id)"
+            >
+              <strong>{{ project.name || '未命名项目' }}</strong>
+              <span>{{ project.role || '未填写角色' }}</span>
+            </button>
+          </div>
+          <div v-else class="import-empty">
+            <p>当前简历里还没有可导入的项目经历。</p>
+            <button type="button" @click="createBlankDossier(); showImportDialog = false">
+              新建空白档案
+            </button>
+          </div>
+        </section>
+      </div>
+    </Teleport>
   </section>
 </template>
 
@@ -463,7 +472,7 @@ async function saveQuestionsToBank(questions: ProjectSopQuestion[]) {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: var(--z-modal, 200);
+  z-index: calc(var(--z-modal, 1000) + 20);
   display: grid;
   place-items: center;
   padding: 20px;

@@ -22,9 +22,14 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/JdAnalysisView.vue'),
   },
   {
+    path: '/project-sop',
+    name: 'project-sop',
+    component: () => import('@/views/ProjectSopView.vue'),
+  },
+  {
     path: '/applications',
     name: 'application-tracker',
-    component: () => import('@/views/ApplicationTrackerView.vue'),
+    redirect: { name: 'workspace-dashboard', query: { tab: 'tracker' } },
   },
   {
     path: '/training',

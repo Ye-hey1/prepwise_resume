@@ -69,18 +69,11 @@ const primaryMenus = [
       'M21 6H3a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2ZM9 14H5v-4h4m2-1h4v2h-4m4 2h-4v2h4',
   },
   {
-    key: 'application-tracker' as const,
-    label: '投递追踪',
-    routeName: 'application-tracker',
+    key: 'project-sop' as const,
+    label: '项目SOP',
+    routeName: 'project-sop',
     iconPath:
-      'M4 5h16M4 12h16M4 19h16M8 5v14M16 5v14',
-  },
-  {
-    key: 'training-center' as const,
-    label: '训练中心',
-    routeName: 'training-center',
-    iconPath:
-      'M12 3l8 4v6c0 5-3.4 7.4-8 8-4.6-.6-8-3-8-8V7l8-4Zm-3 9h6M12 9v6',
+      'M4 5h16M4 12h10M4 19h16M17 10l3 2-3 2v-4Z',
   },
   {
     key: 'resume-review' as const,
@@ -88,6 +81,13 @@ const primaryMenus = [
     routeName: 'resume-review',
     iconPath:
       'M9 11l2 2 4-5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM8 17h8',
+  },
+  {
+    key: 'training-center' as const,
+    label: '训练中心',
+    routeName: 'training-center',
+    iconPath:
+      'M12 3l8 4v6c0 5-3.4 7.4-8 8-4.6-.6-8-3-8-8V7l8-4Zm-3 9h6M12 9v6',
   },
   {
     key: 'ai-interviewer' as const,
@@ -116,7 +116,7 @@ function isMenuActive(menuKey: string): boolean {
   if (menuKey === 'resume-review') return route.name === 'resume-review' || route.path === '/resume-review'
   if (menuKey === 'ai-interviewer') return route.name === 'ai-interviewer' || route.path === '/interview'
   if (menuKey === 'jd-analysis') return route.name === 'jd-analysis' || route.path === '/jd-analysis'
-  if (menuKey === 'application-tracker') return route.name === 'application-tracker' || route.path === '/applications'
+  if (menuKey === 'project-sop') return route.name === 'project-sop' || route.path === '/project-sop'
   if (menuKey === 'training-center') return route.name === 'training-center' || route.path === '/training'
   if (menuKey === 'question-bank') return route.name === 'question-bank' || route.path === '/question-bank'
   return false
@@ -128,7 +128,7 @@ function getMenuRoute(menuKey: string) {
   if (menuKey === 'resume-review') return { name: 'resume-review' }
   if (menuKey === 'ai-interviewer') return { name: 'ai-interviewer' }
   if (menuKey === 'jd-analysis') return { name: 'jd-analysis' }
-  if (menuKey === 'application-tracker') return { name: 'application-tracker' }
+  if (menuKey === 'project-sop') return { name: 'project-sop' }
   if (menuKey === 'training-center') return { name: 'training-center' }
   if (menuKey === 'question-bank') return { name: 'question-bank' }
   return { name: 'resume-editor' }

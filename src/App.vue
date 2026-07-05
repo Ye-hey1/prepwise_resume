@@ -2,19 +2,22 @@
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { RouterView } from 'vue-router'
+import AgentAssistant from '@/components/agent/AgentAssistant.vue'
+import AiConfigDialog from '@/components/ai/AiConfigDialog.vue'
 import ModuleSidebar from '@/components/common/ModuleSidebar.vue'
 import SplashScreen from '@/components/common/SplashScreen.vue'
 import ToastContainer from '@/components/common/ToastContainer.vue'
 
 const sidebarCollapsed = ref(false)
 const mobileMenuOpen = ref(false)
+const showGlobalAiConfig = ref(false)
 const showSplash = ref(!localStorage.getItem('prepwise-splash-shown'))
 const route = useRoute()
 
 const isInterviewRoute = computed(() => route.name === 'ai-interviewer')
 
 // keep-alive 白名单：仅缓存轻量页面，面试页（含 Three.js）不缓存以节省内存
-const keepAliveInclude = ['ResumeEditorView', 'ResumeReviewView', 'JdAnalysisView', 'QuestionBankView']
+const keepAliveInclude = ['ResumeEditorView', 'ResumeReviewView', 'JdAnalysisView', 'QuestionBankView', 'ProjectSopView']
 
 const handleSplashFinish = () => {
   showSplash.value = false
@@ -74,6 +77,8 @@ function closeMobileMenu() {
   </div>
 
   <ToastContainer />
+  <AgentAssistant @open-config="showGlobalAiConfig = true" />
+  <AiConfigDialog v-if="showGlobalAiConfig" @close="showGlobalAiConfig = false" />
 </template>
 
 <style scoped>

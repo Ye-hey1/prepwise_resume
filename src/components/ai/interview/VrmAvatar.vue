@@ -5,22 +5,69 @@
  */
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import * as THREE from 'three'
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
-import { VRMLoaderPlugin, VRM, VRMUtils } from '@pixiv/three-vrm'
+import type { VRM } from '@pixiv/three-vrm'
 import type { VRMHumanBoneName } from '@pixiv/three-vrm-core'
 import { LipSyncPlayer, inferExpression, type Viseme, type ExpressionPreset } from '@/utils/lipSync'
+import {
+  STANDARD_VRM_PROCEDURAL_BONES,
+  VrmProceduralMotionController,
+  type VrmBodyAction,
+} from '@/utils/vrmProceduralMotion'
+import { VrmRuntime } from '@/utils/vrmRuntime'
+import { VrmPoseAdapter } from '@/utils/vrmPoseAdapter'
 import { ALL_VRM_MODELS } from '@/config/vrmModels'
+
+type AvatarBodyAction = VrmBodyAction
+type AvatarExpressionKey =
+  | 'blink'
+  | 'lookLeft'
+  | 'lookRight'
+  | 'lookUp'
+  | 'lookDown'
+  | 'aa'
+  | 'ih'
+  | 'ou'
+  | 'ee'
+  | 'oh'
+  | 'happy'
+  | 'angry'
+  | 'sad'
+  | 'surprised'
+  | 'relaxed'
+  | 'neutral'
+  | 'smile'
+  | 'browUp'
+  | 'browDown'
+  | 'mouthA'
+  | 'mouthI'
+  | 'mouthU'
+  | 'mouthE'
+  | 'mouthO'
+
+interface AvatarMotionDirective {
+  body_action?: AvatarBodyAction
+  emotion?: Partial<Record<'smile' | 'sad' | 'angry' | 'surprised' | 'browUp' | 'browDown' | 'relaxed', number>>
+  expression?: Partial<Record<AvatarExpressionKey | string, number>>
+  eye_target?: { x?: number; y?: number }
+  transition_ms?: number
+}
 
 const props = withDefaults(defineProps<{
   modelUrl?: string
   isSpeaking?: boolean
   streamingText?: string
   avatarStateOverride?: 'idle' | 'speaking' | 'thinking' | null
+  variant?: 'interview' | 'floating-agent'
+  showStatus?: boolean
+  motionDirective?: AvatarMotionDirective | null
 }>(), {
   modelUrl: '',
   isSpeaking: false,
   streamingText: '',
   avatarStateOverride: null,
+  variant: 'interview',
+  showStatus: true,
+  motionDirective: null,
 })
 
 const emit = defineEmits<{
@@ -39,27 +86,51 @@ const showDropZone = ref(false)
 /** 当前模型的骨骼轴是否需要翻转补偿（逐模型配置） */
 const useFlippedBones = ref(false)
 
-// 用于记录每个模型原本的静呼吸安全姿势，用来做动作参照绝对原点，防止直接写死绝对向量造成的毁灭级跨越倒退
-const rawRestPoses = new Map<string, THREE.Quaternion>()
+const currentExpressionWeights = new Map<string, number>()
+const targetExpressionWeights = new Map<string, number>()
+const persistentExpressionWeights = new Map<string, number>()
+const supportedExpressionNames = new Set<string>()
+const proceduralMotion = new VrmProceduralMotionController()
+const runtime = new VrmRuntime()
+const poseAdapter = new VrmPoseAdapter({
+  useLegacyRawBoneFallback: true,
+  devDiagnostics: import.meta.env.DEV,
+})
 
-let scene: THREE.Scene
-let camera: THREE.PerspectiveCamera
-let renderer: THREE.WebGLRenderer
 let vrm: VRM | null = null
-let clock: THREE.Clock
 let animationFrameId = 0
 let currentExpression: ExpressionPreset = 'neutral'
-let blinkTimer: ReturnType<typeof setInterval> | null = null
 let resizeObserver: ResizeObserver | null = null
+let loadedModelUrl = ''
+let modelBasePosition = new THREE.Vector3()
+let targetBodyAction: AvatarBodyAction = 'idle'
+let ambientBodyAction: AvatarBodyAction = 'gentle_pace'
+let nextAmbientActionAt = 0
+let expressionTransitionMs = 220
+let blinkWeightTarget = 0
+let blinkNextAt = 0
+let blinkEndAt = 0
 
 // 交互式鼠标追踪
 const targetMouseX = ref(0)
 const targetMouseY = ref(0)
+const directiveEyeX = ref(0)
+const directiveEyeY = ref(0)
+const hasDirectiveEyeTarget = ref(false)
 let currentMouseX = 0
 let currentMouseY = 0
 
 function handleMouseMove(e: MouseEvent) {
   // 全局鼠标追踪，让虚拟形象的视线总是跟随用户鼠标，增加灵动交互性
+  if (props.variant === 'floating-agent' && containerRef.value) {
+    const rect = containerRef.value.getBoundingClientRect()
+    const headX = rect.left + rect.width * 0.5
+    const headY = rect.top + rect.height * 0.31
+    targetMouseX.value = clampRange((e.clientX - headX) / Math.max(90, rect.width * 0.62), -1, 1)
+    targetMouseY.value = clampRange((headY - e.clientY) / Math.max(100, rect.height * 0.54), -1, 1)
+    return
+  }
+
   const x = (e.clientX / window.innerWidth) * 2 - 1
   const y = -(e.clientY / window.innerHeight) * 2 + 1
   targetMouseX.value = x
@@ -111,12 +182,9 @@ function logBoneDiag() {
 // ═══ 口型同步 ═══
 const lipSyncPlayer = new LipSyncPlayer({
   onVisemeChange(viseme: Viseme | 'neutral', weight: number) {
-    if (!vrm) return
-    const expressionManager = vrm.expressionManager
-    if (!expressionManager) return
     const visemes: (Viseme | 'neutral')[] = ['aa', 'ih', 'ou', 'ee', 'oh', 'neutral']
     for (const v of visemes) {
-      expressionManager.setValue(v, v === viseme ? weight : 0)
+      setExpressionTarget(v, v === viseme ? weight : 0)
     }
   },
   onComplete() {
@@ -128,170 +196,179 @@ const lipSyncPlayer = new LipSyncPlayer({
 // ═══ 场景初始化 ═══
 function initScene() {
   if (!canvasRef.value || !containerRef.value) return
-
-  const container = containerRef.value
-  const width = Math.max(container.clientWidth, 100)
-  const height = Math.max(container.clientHeight, 100)
-
-  scene = new THREE.Scene()
-
-  camera = new THREE.PerspectiveCamera(35, width / height, 0.1, 25)
-  // 完美的人像构图：让脸部处于画面中央偏上，视角平视略带一点点俯视
-  camera.position.set(0, 1.35, 1.0)
-  camera.lookAt(0, 1.25, 0)
-
-  renderer = new THREE.WebGLRenderer({
-    canvas: canvasRef.value,
-    alpha: true,
-    antialias: true,
-  })
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-  renderer.setSize(width, height)
-  renderer.toneMapping = THREE.ACESFilmicToneMapping
-  renderer.toneMappingExposure = 1.1
-
-  // 灵动立体灯光大礼包（适配全新明亮交互式背景）
-  // 1. 全局环境光调优，稍微提亮基础色
-  scene.add(new THREE.AmbientLight(0xffffff, 0.7))
-
-  // 2. 主光源：模拟柔和的顶斜光照亮面部
-  const mainLight = new THREE.DirectionalLight(0xffffff, 1.0)
-  mainLight.position.set(1, 2, 2)
-  scene.add(mainLight)
-
-  // 3. 轮廓光：让质感更通透
-  const rimLightLeft = new THREE.DirectionalLight(0xe0e7ff, 0.8)
-  rimLightLeft.position.set(-2, 1, -2)
-  scene.add(rimLightLeft)
-
-  // 4. 正前下方微微补光（防黑下巴与显示器反光模拟）
-  const fillLight = new THREE.PointLight(0xfff5e6, 0.6, 5)
-  fillLight.position.set(0, 0, 1)
-  scene.add(fillLight)
-
-  clock = new THREE.Clock()
+  runtime.init(canvasRef.value, containerRef.value, props.variant)
   animate()
 }
 
-// ═══ 欧拉角转四元数辅助 ═══
-const _euler = new THREE.Euler()
-const _quat = new THREE.Quaternion()
-function eulerToQuat(x: number, y: number, z: number): THREE.Quaternion {
-  _euler.set(x, y, z)
-  _quat.setFromEuler(_euler)
-  return _quat.clone()
+function clamp01(value: unknown): number {
+  return Math.min(1, Math.max(0, typeof value === 'number' && Number.isFinite(value) ? value : 0))
 }
 
-// ═══ 计算当前帧各骨骼目标四元数 ═══
-interface PoseTargets {
-  [key: string]: THREE.Quaternion | null
+function clampRange(value: unknown, min: number, max: number): number {
+  const n = typeof value === 'number' && Number.isFinite(value) ? value : 0
+  return Math.min(max, Math.max(min, n))
 }
 
-function computePoseTargets(t: number, state: 'idle' | 'speaking' | 'thinking', mouseX: number, mouseY: number): PoseTargets {
-  const targets: PoseTargets = {}
-
-  // ─── 头部与脖子（灵动鼠标跟随交互）───
-  const headLookX = mouseY * 0.3
-  const headLookY = -mouseX * 0.5
-  
-  if (state === 'idle') {
-    targets.head = eulerToQuat(headLookX + Math.sin(t * 0.5) * 0.03, headLookY + Math.sin(t * 0.7) * 0.05, Math.sin(t * 0.3) * 0.02)
-    targets.neck = eulerToQuat(headLookX * 0.4, headLookY * 0.4, 0)
-  } else if (state === 'speaking') {
-    targets.head = eulerToQuat(headLookX + Math.sin(t * 2.8) * 0.06, headLookY + Math.sin(t * 2.2) * 0.09, Math.sin(t * 1.5) * 0.03)
-    targets.neck = eulerToQuat(headLookX * 0.4, headLookY * 0.4, 0)
-  } else if (state === 'thinking') {
-    targets.head = eulerToQuat(headLookX - 0.08 + Math.sin(t * 0.25) * 0.015, headLookY + 0.12 + Math.sin(t * 0.35) * 0.025, 0.1)
-    targets.neck = eulerToQuat(headLookX * 0.4 - 0.05, headLookY * 0.4 + 0.05, 0)
-  }
-
-  // ─── 脊椎呼吸 ───
-  targets.spine = eulerToQuat(Math.sin(t * 1.2) * 0.012, 0, 0)
-
-  // ─── 胸部 ───
-  if (state === 'speaking') {
-    targets.chest = eulerToQuat(Math.sin(t * 2.0) * 0.02, Math.sin(t * 1.6) * 0.015, 0)
-  }
-
-  // ─── 肩膀微放下 ───
-  if (state === 'idle') {
-    targets.leftShoulder = eulerToQuat(0, 0, 0.1 + Math.sin(t * 0.4) * 0.01)
-    targets.rightShoulder = eulerToQuat(0, 0, -0.1 - Math.sin(t * 0.4 + 1) * 0.01)
-  } else if (state === 'speaking') {
-    targets.leftShoulder = eulerToQuat(0, 0, 0.1 + Math.sin(t * 0.8) * 0.01)
-    targets.rightShoulder = eulerToQuat(0, 0, -0.1 - Math.sin(t * 1.0) * 0.01)
-  } else if (state === 'thinking') {
-    targets.leftShoulder = eulerToQuat(0, 0, 0.1)
-    targets.rightShoulder = eulerToQuat(0, 0, -0.1)
-  }
-
-  // ====== 自然原点姿态补偿 ======
-  // 部分模型（如男候选人）的骨骼局部轴与标准模型相反，需要翻转补偿
-  const flipped = useFlippedBones.value
-  const upperBaseX = flipped ? -0.1 : 0.1;
-  const lUpperBaseZ = flipped ? -1.25 : 1.25;
-  const rUpperBaseZ = flipped ? 1.25 : -1.25;
-
-  // ─── 左上臂 ───
-  if (state === 'idle') {
-    // 待机时：平缓优雅的呼吸摆动
-    targets.leftUpperArm = eulerToQuat(upperBaseX, 0, lUpperBaseZ + Math.sin(t * 0.8) * 0.02)
-  } else if (state === 'speaking') {
-    // 说话时：更活跃的倾听与微张开动作！配合手腕做解释动作。
-    targets.leftUpperArm = eulerToQuat(upperBaseX + Math.sin(t * 2.0) * 0.08, 0, lUpperBaseZ - 0.1 + Math.sin(t * 1.5) * 0.05)
-  } else if (state === 'thinking') {
-    targets.leftUpperArm = eulerToQuat(upperBaseX, 0, lUpperBaseZ)
-  }
-
-  // ─── 右上臂 ───
-  if (state === 'idle') {
-    //左右稍有错频，使得看起来更像活人
-    targets.rightUpperArm = eulerToQuat(upperBaseX, 0, rUpperBaseZ - Math.sin(t * 0.9) * 0.02)
-  } else if (state === 'speaking') {
-    targets.rightUpperArm = eulerToQuat(upperBaseX + Math.sin(t * 1.7) * 0.05, 0, rUpperBaseZ + 0.05 - Math.sin(t * 1.3) * 0.03)
-  } else if (state === 'thinking') {
-    targets.rightUpperArm = eulerToQuat(upperBaseX, 0, rUpperBaseZ)
-  }
-
-  // ─── 左前臂（模拟在桌前双手操作或交握的姿态） ───
-  // 从 T pose 往下掰弯小臂放到电脑桌位置，角度微微向上抬
-  const lowerBaseX = flipped ? 1.5 : -1.5;
-  const lLowerBaseZ = flipped ? -0.4 : 0.4;
-  const rLowerBaseZ = flipped ? 0.4 : -0.4;
-
-  if (state === 'idle') {
-    // 待机时仿佛手指正放在鼠标和键盘上微动
-    targets.leftLowerArm = eulerToQuat(lowerBaseX, 0, lLowerBaseZ + Math.sin(t * 1.2) * 0.02)
-  } else if (state === 'speaking') {
-    // 讲话时左手积极参与比划
-    targets.leftLowerArm = eulerToQuat(lowerBaseX + 0.3 + Math.sin(t * 2.5) * 0.25, 0, lLowerBaseZ)
-  } else if (state === 'thinking') {
-    targets.leftLowerArm = eulerToQuat(lowerBaseX, 0, lLowerBaseZ)
-  }
-
-  // ─── 右前臂 ───
-  if (state === 'idle') {
-    targets.rightLowerArm = eulerToQuat(lowerBaseX, 0, rLowerBaseZ + Math.cos(t * 1.5) * 0.02)
-  } else if (state === 'speaking') {
-    // 讲话时右手微动附和（避免双手同时狂舞）
-    targets.rightLowerArm = eulerToQuat(lowerBaseX + 0.1 + Math.sin(t * 1.9) * 0.1, 0, rLowerBaseZ)
-  } else if (state === 'thinking') {
-    targets.rightLowerArm = eulerToQuat(lowerBaseX, 0, rLowerBaseZ)
-  }
-
-  return targets
+function lerp(current: number, target: number, factor: number): number {
+  return current + (target - current) * factor
 }
 
-// ═══ （废弃 forceSetRawBone） ═══
+function expressionAliases(name: string): string[] {
+  const normalized = name.trim()
+  const map: Record<string, string[]> = {
+    blink: ['blink'],
+    lookLeft: ['lookLeft'],
+    lookRight: ['lookRight'],
+    lookUp: ['lookUp'],
+    lookDown: ['lookDown'],
+    mouthA: ['aa'],
+    mouthI: ['ih'],
+    mouthU: ['ou'],
+    mouthE: ['ee'],
+    mouthO: ['oh'],
+    smile: ['happy', 'relaxed'],
+    browUp: ['surprised'],
+    browDown: ['angry'],
+    sad: ['sad'],
+    angry: ['angry'],
+    surprised: ['surprised'],
+    relaxed: ['relaxed'],
+    happy: ['happy'],
+    neutral: ['neutral'],
+  }
+  return map[normalized] ?? [normalized]
+}
+
+function setExpressionTarget(name: string, weight: number) {
+  const value = clamp01(weight)
+  for (const alias of expressionAliases(name)) {
+    if (alias === 'neutral') continue
+    if (supportedExpressionNames.size > 0 && !supportedExpressionNames.has(alias)) continue
+    targetExpressionWeights.set(alias, value)
+  }
+}
+
+function setPersistentExpressionTarget(name: string, weight: number) {
+  const value = clamp01(weight)
+  for (const alias of expressionAliases(name)) {
+    if (alias === 'neutral') continue
+    if (supportedExpressionNames.size > 0 && !supportedExpressionNames.has(alias)) continue
+    persistentExpressionWeights.set(alias, value)
+  }
+}
+
+function clearExpressionTargets(names: string[]) {
+  for (const name of names) {
+    for (const alias of expressionAliases(name)) persistentExpressionWeights.set(alias, 0)
+  }
+}
+
+function resetExpressionState() {
+  currentExpressionWeights.clear()
+  targetExpressionWeights.clear()
+  persistentExpressionWeights.clear()
+  supportedExpressionNames.clear()
+}
+
+function scheduleNextBlink(now: number) {
+  blinkNextAt = now + 2.4 + Math.random() * 3.2
+  blinkEndAt = 0
+}
+
+function updateBlinkTarget(now: number) {
+  if (blinkEndAt > 0) {
+    if (now < blinkEndAt) {
+      blinkWeightTarget = 1
+      return
+    }
+    blinkEndAt = 0
+    blinkWeightTarget = 0
+    scheduleNextBlink(now)
+    return
+  }
+  if (now >= blinkNextAt) {
+    blinkWeightTarget = 1
+    blinkEndAt = now + 0.08 + Math.random() * 0.08
+  }
+}
+
+function updateExpressionWeights(delta: number, now: number) {
+  if (!vrm?.expressionManager) return
+  updateBlinkTarget(now)
+  setExpressionTarget('blink', blinkWeightTarget)
+  const factor = 1 - Math.exp(-delta / Math.max(0.001, expressionTransitionMs / 1000))
+  const names = new Set([...currentExpressionWeights.keys(), ...persistentExpressionWeights.keys(), ...targetExpressionWeights.keys()])
+  for (const name of names) {
+    const current = currentExpressionWeights.get(name) ?? 0
+    const target = Math.max(persistentExpressionWeights.get(name) ?? 0, targetExpressionWeights.get(name) ?? 0)
+    const next = lerp(current, target, factor)
+    currentExpressionWeights.set(name, next)
+    vrm.expressionManager.setValue(name, next < 0.001 ? 0 : next)
+  }
+}
+
+function updateEyeTargetsFromExpressions(x: number, y: number) {
+  const left = Math.max(0, -x)
+  const right = Math.max(0, x)
+  const up = Math.max(0, y)
+  const down = Math.max(0, -y)
+  setExpressionTarget('lookLeft', Math.min(left, 1) * 0.55)
+  setExpressionTarget('lookRight', Math.min(right, 1) * 0.55)
+  setExpressionTarget('lookUp', Math.min(up, 1) * 0.42)
+  setExpressionTarget('lookDown', Math.min(down, 1) * 0.42)
+}
+
+function requestBodyAction(action: AvatarBodyAction) {
+  if (targetBodyAction === action) return
+  targetBodyAction = action
+  proceduralMotion.setBaseAction(action)
+}
+
+function pickAmbientBodyAction(): AvatarBodyAction {
+  const roll = Math.random()
+  if (roll < 0.64) return 'gentle_pace'
+  return 'idle'
+}
+
+function scheduleNextAmbientAction(elapsed: number) {
+  nextAmbientActionAt = elapsed + 4.8 + Math.random() * 4.8
+}
+
+function updateImplicitBodyAction(elapsed = runtime.clock.getElapsedTime()) {
+  if (props.motionDirective?.body_action) return
+
+  if (avatarState.value === 'speaking') {
+    requestBodyAction('arm_explain')
+    return
+  }
+
+  if (avatarState.value === 'thinking') {
+    requestBodyAction('thinking_nod')
+    return
+  }
+
+  if (props.variant !== 'floating-agent') {
+    requestBodyAction('idle')
+    return
+  }
+
+  if (elapsed >= nextAmbientActionAt) {
+    ambientBodyAction = pickAmbientBodyAction()
+    scheduleNextAmbientAction(elapsed)
+  }
+  requestBodyAction(ambientBodyAction)
+}
+
+// ═══ 分层程序化骨骼动画：组件只应用 controller 输出的相对 offset，不覆盖内部三层混合逻辑 ═══
 // ═══ 渲染循环 ═══
 let diagFrameCount = 0
 function animate() {
   animationFrameId = requestAnimationFrame(animate)
-  const delta = clock.getDelta()
-  const t = clock.getElapsedTime()
+  const delta = runtime.clock.getDelta()
+  const t = runtime.clock.getElapsedTime()
 
   if (!vrm) {
-    if (renderer) renderer.render(scene, camera)
+    runtime.render()
     return
   }
 
@@ -299,7 +376,7 @@ function animate() {
 
   // ═══ 诊断：前 5 帧打印骨骼状态 ═══
   diagFrameCount++
-  if (diagFrameCount <= 5) {
+  if (import.meta.env.DEV && diagFrameCount <= 5) {
     const lArm = vrm.humanoid.getNormalizedBoneNode('leftUpperArm')
     const lArmRaw = vrm.humanoid.getRawBoneNode('leftUpperArm')
     console.log(`[帧${diagFrameCount}] state=${state}`, {
@@ -308,104 +385,87 @@ function animate() {
     })
   }
 
-  // ═══ 平滑更新鼠标追踪参数 ═══
-  currentMouseX += (targetMouseX.value - currentMouseX) * 0.08
-  currentMouseY += (targetMouseY.value - currentMouseY) * 0.08
+  // ═══ 平滑更新视线追踪参数：外部指令优先，否则跟随鼠标位置，避免两个目标互相抵消 ═══
+  const desiredLookX = hasDirectiveEyeTarget.value ? directiveEyeX.value : targetMouseX.value
+  const desiredLookY = hasDirectiveEyeTarget.value ? directiveEyeY.value : targetMouseY.value
+  const lookResponse = props.variant === 'floating-agent' ? 0.38 : 0.1
+  currentMouseX += (desiredLookX - currentMouseX) * lookResponse
+  currentMouseY += (desiredLookY - currentMouseY) * lookResponse
+  updateImplicitBodyAction(t)
+  const motionFrame = proceduralMotion.update({
+    delta,
+    elapsed: t,
+    avatarState: state,
+    lookTargetX: currentMouseX,
+    lookTargetY: currentMouseY,
+    variant: props.variant,
+    flippedBones: useFlippedBones.value,
+  })
 
-  // ═══ 计算本帧目标姿态 ═══
-  const targets = computePoseTargets(t, state, currentMouseX, currentMouseY)
+  // ═══ 计算本帧目标姿态与表情视线：骨骼由 controller 叠加，眼球 BlendShape 使用同一套缓动视线 ═══
+  for (const name of ['lookLeft', 'lookRight', 'lookUp', 'lookDown']) {
+    for (const alias of expressionAliases(name)) targetExpressionWeights.set(alias, 0)
+  }
 
-  // ═══ VRM 引擎更新（注意：它会用 Normalized 的设定覆盖 RawBone！所以相对控制一定要在这之后！） ═══
+  // ═══ VRM 引擎更新：姿态优先写入 normalized humanoid，再由 three-vrm 转换到 raw skeleton。═══
+  poseAdapter.applyFrame(vrm, motionFrame, {
+    basePosition: modelBasePosition,
+  })
+  const lookApplied = poseAdapter.applyLook(vrm, motionFrame.eyeLook)
+  if (!lookApplied) {
+    updateEyeTargetsFromExpressions(motionFrame.eyeLook.x, motionFrame.eyeLook.y)
+  }
+  updateExpressionWeights(delta, t)
   vrm.update(delta)
 
-  // ═══ 增量补偿法：必须在原生 update 过后劫持绝对控制，施加自然摆动 ═══
-  for (const [boneName, offsetQuat] of Object.entries(targets)) {
-    if (!offsetQuat) continue
-    const rawBone = vrm.humanoid.getRawBoneNode(boneName as VRMHumanBoneName)
-    const baseQuat = rawRestPoses.get(boneName)
-    if (rawBone && baseQuat) {
-      // 提取核心坐骨基准原点，通过 multiply() 叠加自然下坠弯曲和灵动呼吸的弧度差
-      const finalQuat = new THREE.Quaternion().copy(baseQuat).multiply(offsetQuat)
-      rawBone.quaternion.copy(finalQuat)
-    }
-  }
-
-
-
-  // ═══ 诊断：覆盖后检查 raw bone ═══
-  if (diagFrameCount >= 3 && diagFrameCount <= 6) {
-    const lArmRaw = vrm.humanoid.getRawBoneNode('leftUpperArm')
-    if (lArmRaw) {
-      console.log(`[帧${diagFrameCount} 覆盖后] rawLeftArm quaternion: (${lArmRaw.quaternion.x.toFixed(3)}, ${lArmRaw.quaternion.y.toFixed(3)}, ${lArmRaw.quaternion.z.toFixed(3)}, ${lArmRaw.quaternion.w.toFixed(3)})`)
-    }
-  }
-
-  renderer.render(scene, camera)
+  runtime.render()
 }
 
 // ═══ 加载 VRM 模型 ═══
 async function loadModel(url: string) {
   if (!url || isModelLoading.value) return
+  if (url === loadedModelUrl && isModelLoaded.value) return
 
   isModelLoading.value = true
   modelLoadError.value = ''
   boneDiagLogged = false
   diagFrameCount = 0
+  lastStreamLength = 0
 
   try {
-    const loader = new GLTFLoader()
-    loader.register((parser) => new VRMLoaderPlugin(parser))
-
     // URL 编码处理中文文件名
     const encodedUrl = encodeURI(url)
     console.log('[VRM] 加载模型:', encodedUrl)
-    const gltf = await loader.loadAsync(encodedUrl)
-    const loadedVrm = gltf.userData.vrm as VRM | undefined
-
-    if (!loadedVrm) throw new Error('文件不是有效的 VRM 模型')
 
     // 确定模型信息（用于场景旋转和骨骼补偿判断）
     const modelInfo = ALL_VRM_MODELS.find(m => encodeURI(m.url) === encodedUrl || m.url === url)
     useFlippedBones.value = modelInfo?.flippedSkeleton === true
 
-    // 清理旧模型
-    if (vrm) {
-      scene.remove(vrm.scene)
-      VRMUtils.deepDispose(vrm.scene)
-    }
-
-    VRMUtils.removeUnnecessaryVertices(gltf.scene)
-    VRMUtils.removeUnnecessaryJoints(gltf.scene)
-
-    // 自动缩放
-    const box = new THREE.Box3().setFromObject(loadedVrm.scene)
-    const size = box.getSize(new THREE.Vector3())
-    const scale = 1.4 / size.y
-    loadedVrm.scene.scale.setScalar(scale)
-
     // 场景旋转：根据模型配置决定是否需要 180° 翻转
     // 默认需要翻转（needsSceneFlip 未设置或为 true），部分模型（男候选人）不需要
     const needsFlip = modelInfo?.needsSceneFlip !== false
-    loadedVrm.scene.rotation.y = needsFlip ? Math.PI : 0
+    const result = await runtime.loadModel({
+      url,
+      variant: props.variant,
+      needsSceneFlip: needsFlip,
+    })
 
-    // 确保归零：让人物站在原点，而不是被强行下移，保证镜头构图不出画
-    loadedVrm.scene.position.y = 0
+    vrm = result.vrm
+    modelBasePosition = result.basePosition.clone()
+    poseAdapter.attach(result.vrm, STANDARD_VRM_PROCEDURAL_BONES)
+    resetExpressionState()
 
-    scene.add(loadedVrm.scene)
-    
-    // 我们必须首先让核心模型进行一次原位骨骼装载和校准，截取其安全的初始锚定
-    loadedVrm.update(0)
-    rawRestPoses.clear()
-    const trackBones: VRMHumanBoneName[] = ['leftShoulder', 'rightShoulder', 'leftUpperArm', 'rightUpperArm', 'leftLowerArm', 'rightLowerArm', 'chest', 'spine']
-    for (const b of trackBones) {
-      const raw = loadedVrm.humanoid.getRawBoneNode(b)
-      if (raw) {
-        rawRestPoses.set(b, new THREE.Quaternion().copy(raw.quaternion))
-      }
+    for (const expression of result.vrm.expressionManager?.expressions ?? []) {
+      if (expression.name) supportedExpressionNames.add(expression.name)
     }
-
-    vrm = loadedVrm
+    for (const preset of ['aa', 'ih', 'ou', 'ee', 'oh', 'blink', 'happy', 'angry', 'sad', 'surprised', 'relaxed', 'lookLeft', 'lookRight', 'lookUp', 'lookDown']) {
+      if (result.vrm.expressionManager?.getExpression(preset)) supportedExpressionNames.add(preset)
+    }
+    proceduralMotion.reset()
+    scheduleNextBlink(runtime.clock.getElapsedTime())
+    applyMotionDirective(props.motionDirective)
     isModelLoaded.value = true
+    loadedModelUrl = url
     emit('model-loaded')
 
     // 打印骨骼诊断
@@ -416,6 +476,7 @@ async function loadModel(url: string) {
     const message = err instanceof Error ? err.message : '模型加载失败'
     modelLoadError.value = message
     isModelLoaded.value = false
+    loadedModelUrl = ''
     emit('model-error', message)
   } finally {
     isModelLoading.value = false
@@ -424,28 +485,49 @@ async function loadModel(url: string) {
 
 // ═══ 眨眼 ═══
 function startBlinkAnimation() {
-  if (blinkTimer) clearInterval(blinkTimer)
-  blinkTimer = setInterval(() => {
-    if (!vrm) return
-    const expressionManager = vrm.expressionManager
-    if (!expressionManager) return
-    expressionManager.setValue('blink', 1)
-    setTimeout(() => {
-      const activeExpressionManager = vrm?.expressionManager
-      if (activeExpressionManager) activeExpressionManager.setValue('blink', 0)
-    }, 150)
-  }, 3000 + Math.random() * 2000)
+  scheduleNextBlink(runtime.clock.getElapsedTime())
 }
 
 // ═══ 表情控制 ═══
 function setExpression(preset: ExpressionPreset, weight = 1.0) {
-  if (!vrm) return
-  const expressionManager = vrm.expressionManager
-  if (!expressionManager) return
   for (const p of ['happy', 'angry', 'sad', 'surprised', 'relaxed'] as ExpressionPreset[]) {
-    expressionManager.setValue(p, p === preset ? weight : 0)
+    setPersistentExpressionTarget(p, p === preset ? weight : 0)
   }
   currentExpression = preset
+}
+
+function applyMotionDirective(directive: AvatarMotionDirective | null | undefined) {
+  clearExpressionTargets(['happy', 'angry', 'sad', 'surprised', 'relaxed', 'smile', 'browUp', 'browDown'])
+  if (!directive) {
+    expressionTransitionMs = 220
+    proceduralMotion.setTransitionMs(expressionTransitionMs)
+    directiveEyeX.value = 0
+    directiveEyeY.value = 0
+    hasDirectiveEyeTarget.value = false
+    updateImplicitBodyAction()
+    return
+  }
+
+  expressionTransitionMs = clampRange(directive.transition_ms, 150, 300) || 220
+  proceduralMotion.setTransitionMs(expressionTransitionMs)
+  if (directive.body_action) requestBodyAction(directive.body_action)
+
+  const emotion = directive.emotion ?? {}
+  if (typeof emotion.smile === 'number') setPersistentExpressionTarget('smile', emotion.smile)
+  if (typeof emotion.sad === 'number') setPersistentExpressionTarget('sad', emotion.sad)
+  if (typeof emotion.angry === 'number') setPersistentExpressionTarget('angry', emotion.angry)
+  if (typeof emotion.surprised === 'number') setPersistentExpressionTarget('surprised', emotion.surprised)
+  if (typeof emotion.browUp === 'number') setPersistentExpressionTarget('browUp', emotion.browUp)
+  if (typeof emotion.browDown === 'number') setPersistentExpressionTarget('browDown', emotion.browDown)
+  if (typeof emotion.relaxed === 'number') setPersistentExpressionTarget('relaxed', emotion.relaxed)
+
+  for (const [name, value] of Object.entries(directive.expression ?? {})) {
+    setPersistentExpressionTarget(name, clamp01(value))
+  }
+
+  hasDirectiveEyeTarget.value = Boolean(directive.eye_target)
+  directiveEyeX.value = hasDirectiveEyeTarget.value ? clampRange(directive.eye_target?.x, -1, 1) : 0
+  directiveEyeY.value = hasDirectiveEyeTarget.value ? clampRange(directive.eye_target?.y, -1, 1) : 0
 }
 
 function playLipSync(text: string) {
@@ -453,6 +535,9 @@ function playLipSync(text: string) {
   avatarState.value = 'speaking'
   emit('lip-sync-state', 'playing')
   setExpression(inferExpression(text))
+  if (/问题|为什么|如何|怎么|请说明|请解释|what|why|how|explain|describe/i.test(text)) {
+    setPersistentExpressionTarget('browDown', 0.18)
+  }
   lipSyncPlayer.play(text)
 }
 
@@ -460,17 +545,22 @@ function stopLipSync() {
   lipSyncPlayer.stop()
   avatarState.value = 'idle'
   setExpression('neutral')
+  updateImplicitBodyAction()
 }
 
 function setThinking() {
   avatarState.value = 'thinking'
   setExpression('neutral')
+  setPersistentExpressionTarget('browDown', 0.24)
+  requestBodyAction(props.motionDirective?.body_action ?? 'thinking_nod')
   lipSyncPlayer.stop()
 }
 
 function setIdle() {
   avatarState.value = 'idle'
   setExpression('relaxed', 0.3)
+  if (props.motionDirective?.body_action) requestBodyAction(props.motionDirective.body_action)
+  else updateImplicitBodyAction()
   lipSyncPlayer.stop()
 }
 
@@ -507,6 +597,10 @@ watch(() => props.streamingText, (text) => {
     lastStreamLength = text.length
     if (newChars.length > 0) {
       avatarState.value = 'speaking'
+      setExpression(inferExpression(text))
+      if (/问题|为什么|如何|怎么|请说明|请解释|what|why|how|explain|describe/i.test(text)) {
+        setPersistentExpressionTarget('browDown', 0.16)
+      }
       lipSyncPlayer.play(newChars)
     }
   }
@@ -515,19 +609,25 @@ watch(() => props.streamingText, (text) => {
 watch(() => props.isSpeaking, (speaking) => { if (!speaking) lastStreamLength = 0 })
 
 watch(() => props.avatarStateOverride, (state) => {
-  if (!state) return
   if (state === 'thinking') setThinking()
   else if (state === 'idle') setIdle()
+  else if (state === 'speaking') {
+    avatarState.value = 'speaking'
+    requestBodyAction(props.motionDirective?.body_action ?? 'arm_explain')
+  }
+  else if (!props.isSpeaking) setIdle()
+})
+
+watch(() => props.motionDirective, directive => applyMotionDirective(directive), { deep: true })
+
+watch(() => props.modelUrl, async (url) => {
+  if (url) await loadModel(url)
 })
 
 // ═══ 尺寸自适应（ResizeObserver） ═══
 function handleResize() {
-  if (!containerRef.value || !renderer || !camera) return
-  const w = Math.max(containerRef.value.clientWidth, 50)
-  const h = Math.max(containerRef.value.clientHeight, 50)
-  camera.aspect = w / h
-  camera.updateProjectionMatrix()
-  renderer.setSize(w, h)
+  if (!containerRef.value) return
+  runtime.resize(containerRef.value)
 }
 
 // ═══ 生命周期 ═══
@@ -549,20 +649,26 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (animationFrameId) cancelAnimationFrame(animationFrameId)
-  if (blinkTimer) clearInterval(blinkTimer)
   lipSyncPlayer.destroy()
   window.removeEventListener('resize', handleResize)
   window.removeEventListener('mousemove', handleMouseMove)
   if (resizeObserver) resizeObserver.disconnect()
-  if (vrm) { VRMUtils.deepDispose(vrm.scene); vrm = null }
-  if (renderer) renderer.dispose()
+  runtime.dispose()
+  vrm = null
 })
 
-defineExpose({ playLipSync, stopLipSync, setExpression, setThinking, setIdle, loadModel, isModelLoaded })
+defineExpose({ playLipSync, stopLipSync, setExpression, setThinking, setIdle, loadModel, applyMotionDirective, isModelLoaded })
 </script>
 
 <template>
-  <div ref="containerRef" class="vrm-avatar" @drop="handleFileDrop" @dragover="handleDragOver" @dragleave="handleDragLeave">
+  <div
+    ref="containerRef"
+    class="vrm-avatar"
+    :class="`vrm-avatar--${variant}`"
+    @drop="handleFileDrop"
+    @dragover="handleDragOver"
+    @dragleave="handleDragLeave"
+  >
     <canvas v-show="isModelLoaded" ref="canvasRef" class="vrm-canvas" />
 
     <div v-if="isModelLoading" class="vrm-overlay">
@@ -587,7 +693,7 @@ defineExpose({ playLipSync, stopLipSync, setExpression, setThinking, setIdle, lo
       <p>{{ modelLoadError }}</p>
     </div>
 
-    <div v-if="isModelLoaded" class="vrm-status">
+    <div v-if="showStatus && isModelLoaded" class="vrm-status">
       <span class="status-dot" :class="avatarState" />
     </div>
   </div>
@@ -603,6 +709,22 @@ defineExpose({ playLipSync, stopLipSync, setExpression, setThinking, setIdle, lo
   /* 真实的现代办公/面试室场景背景 */
   background: url('@/assets/images/interview-bg.png') center / cover no-repeat;
   box-shadow: inset 0 0 60px rgba(0,0,0,0.4);
+}
+
+.vrm-avatar--floating-agent {
+  overflow: visible;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.vrm-avatar--floating-agent .vrm-overlay,
+.vrm-avatar--floating-agent .vrm-placeholder {
+  inset: auto 12px 18px;
+  min-height: 96px;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.72);
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
 }
 
 .vrm-canvas { width: 100% !important; height: 100% !important; display: block; }

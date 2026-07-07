@@ -2,10 +2,48 @@ import type { ResolvedSearchProviderConfig } from '@/stores/aiConfig'
 import type { AiConfig } from '../stream'
 import type { StreamCallbacks } from '../types/jd'
 import type { CompanyIntelData, CompanyIntelSourceDetail } from '../types/jd'
-import { cleanJsonResponse, nonStreamAIRequest } from '../stream'
+import { runJsonTask, type AiTaskIssue } from '../aiTaskRuntime'
 import { COMPANY_INTEL_SYSTEM_PROMPT, COMPANY_INTEL_USER_TEMPLATE } from '../prompts/jdCompanyIntelPrompt'
 import { searchAcrossProviders, type SearchResultItem } from '../searchService'
 import { normalizeCompanyIntel } from './normalizers'
+
+const COMPANY_INTEL_SCHEMA_HINT = `{
+  "companyName": string,
+  "companyHistory": string,
+  "businessScope": string,
+  "orgStructure": string,
+  "howToReference": string,
+  "techStack": string[],
+  "cultureNotes": string,
+  "competitors": string[],
+  "reverseQuestions": string[],
+  "sources": string[],
+  "sourceDetails": [],
+  "fetchedAt": string,
+  "companySize": string,
+  "fundingStage": string,
+  "foundedYear": string,
+  "industry": string,
+  "products": string[],
+  "recentNews": string[],
+  "interviewProcess": string,
+  "interviewStyle": string,
+  "frequentTopics": string[],
+  "employeeReviews": string,
+  "workPace": string
+}`
+
+function validateCompanyIntel(result: CompanyIntelData): AiTaskIssue[] {
+  const issues: AiTaskIssue[] = []
+  if (!result.businessScope.trim() && !result.companyHistory.trim() && result.techStack.length === 0) {
+    issues.push({
+      path: '$',
+      message: '公司情报缺少业务、历史和技术栈等核心信息',
+      severity: 'error',
+    })
+  }
+  return issues
+}
 
 function normalizeWhitespace(input: string): string {
   return input.replace(/\s+/g, ' ').trim()
@@ -180,24 +218,26 @@ export async function generateCompanyIntel(
     .replace('{searchInterview}', formatSearchResults(searchResults.searchInterview))
     .replace('{searchCompetitors}', formatSearchResults(searchResults.searchNews))
 
-  const rawText = await nonStreamAIRequest(
-    aiConfig,
-    COMPANY_INTEL_SYSTEM_PROMPT,
-    userMessage,
-    { temperature: 0.3, maxTokens: 4096 },
-    combinedSignal,
-  )
-
-  const jsonStr = cleanJsonResponse(rawText)
-
-  let parsed: unknown
+  let intel: CompanyIntelData
   try {
-    parsed = JSON.parse(jsonStr)
-  } catch {
+    intel = await runJsonTask({
+      taskName: 'jd.generateCompanyIntel',
+      category: 'jd-company-intel',
+      config: aiConfig,
+      systemPrompt: COMPANY_INTEL_SYSTEM_PROMPT,
+      userMessage,
+      normalize: normalizeCompanyIntel,
+      validate: validateCompanyIntel,
+      schemaHint: COMPANY_INTEL_SCHEMA_HINT,
+      requestOptions: { temperature: 0.3, maxTokens: 4096 },
+      signal: combinedSignal,
+      repair: true,
+    })
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') throw error
+    if (error instanceof Error && /API 请求失败|AI 请求超时|请求已取消/.test(error.message)) throw error
     throw new Error('AI 返回了无法解析的公司情报数据，请重试。')
   }
-
-  const intel = normalizeCompanyIntel(parsed)
   if (!intel.companyName) intel.companyName = company
 
   const fetchedAt = new Date().toISOString()

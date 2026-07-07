@@ -5,6 +5,7 @@ import AddQuestionDialog from '@/components/questionBank/AddQuestionDialog.vue'
 import AiGenerateDialog from '@/components/questionBank/AiGenerateDialog.vue'
 import RealExperienceDialog from '@/components/questionBank/RealExperienceDialog.vue'
 import SourceBadge from '@/components/questionBank/SourceBadge.vue'
+import QuizTrainingDialog from '@/components/interview/QuizTrainingDialog.vue'
 
 defineOptions({ name: 'QuestionBankView' })
 import { useQuestionBankStore, type SavedQuestion } from '@/stores/questionBank'
@@ -23,6 +24,10 @@ const aiConfigStore = useAiConfigStore()
 const resumeStore = useResumeStore()
 const router = useRouter()
 
+// 自测训练弹窗
+const showQuizDialog = ref(false)
+
+// 题库相关状态
 const showAddDialog = ref(false)
 const showAiDialog = ref(false)
 const showRealExperienceDialog = ref(false)
@@ -61,6 +66,7 @@ const sortOptions: Array<{ value: SortMode; label: string }> = [
   { value: 'mastery-desc', label: '掌握优先' },
 ]
 
+// 题库相关计算属性和方法
 const pureQuestions = computed(() =>
   qbStore.questions.filter((question) => !isInterviewExperienceImport(question)),
 )
@@ -90,7 +96,7 @@ const filteredQuestions = computed(() => {
   if (sourceFilter.value !== 'all') {
     list = list.filter((item) => {
       if (sourceFilter.value === 'real_experience') {
-        return item.source_type === 'real_experience' || 
+        return item.source_type === 'real_experience' ||
                item.tags?.includes('real_experience') ||
                item.source === 'InterviewRadar'
       }
@@ -109,9 +115,9 @@ const filteredQuestions = computed(() => {
         item.reference_answer,
         ...(item.tags ?? []),
       ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
 
       return haystack.includes(keyword)
     })
@@ -125,8 +131,8 @@ const stats = computed(() => {
   const practiced = all.filter((item) => (item.mastery_level ?? 0) > 0).length
   const needsPractice = all.filter((item) => (item.mastery_level ?? 0) <= 2).length
   const withReference = all.filter((item) => Boolean(item.reference_answer?.trim())).length
-  const realExperience = all.filter((item) => 
-    item.source_type === 'real_experience' || 
+  const realExperience = all.filter((item) =>
+    item.source_type === 'real_experience' ||
     item.tags?.includes('real_experience') ||
     item.source === 'InterviewRadar'
   ).length
@@ -277,7 +283,6 @@ async function handleGenerateAnswer() {
   generatingAnswer.value = true
 
   try {
-    // 构建简历上下文
     const resumeContext = [
       resumeStore.basicInfo.jobTitle ? `目标岗位：${resumeStore.basicInfo.jobTitle}` : '',
       resumeStore.basicInfo.workYears ? `工作年限：${resumeStore.basicInfo.workYears}` : '',
@@ -347,12 +352,23 @@ onMounted(() => {
 <template>
   <div class="qb-page">
     <header class="qb-header">
-      <div class="header-copy">
-        <h1>面试题库</h1>
-        <p>沉淀可直接练习的单道面试问题。</p>
+      <div class="header-left">
+        <div class="header-copy">
+          <h1>面试题库</h1>
+          <p>沉淀高频题与真实面经，自测训练巩固掌握度</p>
+        </div>
       </div>
 
+      <!-- 题库操作按钮 -->
       <div class="header-actions">
+        <button class="action-btn" type="button" @click="showQuizDialog = true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10" />
+            <circle cx="12" cy="12" r="6" />
+            <circle cx="12" cy="12" r="2" />
+          </svg>
+          自测训练
+        </button>
         <button class="action-btn secondary" type="button" @click="showAiDialog = true">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 3v4" />
@@ -386,6 +402,7 @@ onMounted(() => {
       </div>
     </header>
 
+    <!-- 题库统计条 -->
     <section class="stat-strip" aria-label="题库统计">
       <span>全部 <strong>{{ stats.total }}</strong></span>
       <span>待练 <strong>{{ stats.needsPractice }}</strong></span>
@@ -395,6 +412,7 @@ onMounted(() => {
       <span>可追溯 <strong>{{ stats.grounded }}</strong></span>
     </section>
 
+    <!-- 题库筛选栏 -->
     <section class="toolbar">
       <div class="search-box">
         <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -446,105 +464,104 @@ onMounted(() => {
       </button>
     </section>
 
-    <main class="question-area custom-scroll">
-      <div v-if="qbStore.isLoading" class="state-box">
-        <div class="loading-spinner"></div>
-        <h3>正在加载题库</h3>
-        <p>请稍等。</p>
-      </div>
-
-      <div v-else-if="qbStore.errorMsg" class="state-box error">
-        <h3>题库加载失败</h3>
-        <p>{{ qbStore.errorMsg }}</p>
-        <button class="outline-btn" type="button" @click="qbStore.fetchQuestions()">重新加载</button>
-      </div>
-
-      <template v-else>
-        <div v-if="filteredQuestions.length === 0" class="state-box empty">
-          <h3>{{ pureQuestions.length ? '没有匹配的题目' : '题库暂无题目' }}</h3>
-          <p>{{ pureQuestions.length ? '调整筛选条件后再查看。' : '通过以下方式快速填充你的面试题库：' }}</p>
-
-          <!-- 筛选无结果时 -->
-          <div v-if="pureQuestions.length" class="empty-actions">
-            <button class="outline-btn" type="button" @click="resetFilters">清空筛选</button>
-          </div>
-
-          <!-- 题库为空时的引导卡片 -->
-          <div v-else class="empty-guide-grid">
-            <div class="guide-card" @click="$router.push({ name: 'jd-analysis' })">
-              <div class="guide-icon guide-icon--jd">
-                <svg viewBox="0 0 24 24" fill="none" width="20" height="20"><path d="M21 6H3a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2Z" stroke="currentColor" stroke-width="1.5" /></svg>
-              </div>
-              <h4>从 JD 分析生成</h4>
-              <p>粘贴目标岗位 JD，AI 自动生成针对性面试题</p>
-            </div>
-            <div class="guide-card" @click="showAiDialog = true">
-              <div class="guide-icon guide-icon--ai">
-                <svg viewBox="0 0 24 24" fill="none" width="20" height="20"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3L12 3Z" stroke="currentColor" stroke-width="1.5" /></svg>
-              </div>
-              <h4>AI 智能生成</h4>
-              <p>输入岗位方向，AI 生成常见面试题和参考答案</p>
-            </div>
-            <div class="guide-card" @click="showAddDialog = true">
-              <div class="guide-icon guide-icon--add">
-                <svg viewBox="0 0 24 24" fill="none" width="20" height="20"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
-              </div>
-              <h4>手动添加</h4>
-              <p>记录面试中遇到的真题，积累个人题库</p>
-            </div>
-          </div>
+    <main class="main-content custom-scroll">
+      <!-- 题库内容 -->
+        <div v-if="qbStore.isLoading" class="state-box">
+          <div class="loading-spinner"></div>
+          <h3>正在加载题库</h3>
+          <p>请稍等。</p>
         </div>
 
-        <div v-else class="question-grid">
-          <article v-for="question in filteredQuestions" :key="question.id ?? question.content" class="question-card">
-            <!-- 悬停时显示的删除图标 -->
-            <button
-              class="card-delete-btn"
-              type="button"
-              title="删除题目"
-              @click.stop="deleteQuestion(question)"
-            >
-              <svg viewBox="0 0 24 24" fill="none" width="15" height="15">
-                <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            </button>
-
-            <div class="card-head">
-              <span class="category-pill">{{ question.category || '未分类' }}</span>
-              <span class="meta-pill">{{ masteryLabel(question.mastery_level) }}</span>
-            </div>
-
-            <h2>{{ question.content }}</h2>
-
-            <div class="card-meta">
-              <span>{{ formatDate(question.created_at) }}</span>
-              <span v-if="question.reference_answer">有参考答案</span>
-              <span v-if="question.focus_area">{{ question.focus_area }}</span>
-            </div>
-
-            <div class="tag-row">
-              <span v-for="tag in question.tags?.slice(0, 5)" :key="tag" class="tag-pill">#{{ tag }}</span>
-              <span v-if="!question.tags?.length" class="tag-pill muted">未标注标签</span>
-            </div>
-
-            <div class="source-row">
-              <SourceBadge
-                :source-type="question.source_type"
-                :source-url="question.source_url"
-                :is-grounded="question.is_grounded"
-                :resume-anchor="question.resume_anchor"
-              />
-            </div>
-
-            <footer class="card-actions">
-              <button class="card-btn" type="button" @click="openQuestion(question)">查看</button>
-              <button class="card-btn primary" type="button" @click="startPractice([question])">练习</button>
-            </footer>
-          </article>
+        <div v-else-if="qbStore.errorMsg" class="state-box error">
+          <h3>题库加载失败</h3>
+          <p>{{ qbStore.errorMsg }}</p>
+          <button class="outline-btn" type="button" @click="qbStore.fetchQuestions()">重新加载</button>
         </div>
-      </template>
+
+        <template v-else>
+          <div v-if="filteredQuestions.length === 0" class="state-box empty">
+            <h3>{{ pureQuestions.length ? '没有匹配的题目' : '题库暂无题目' }}</h3>
+            <p>{{ pureQuestions.length ? '调整筛选条件后再查看。' : '通过以下方式快速填充你的面试题库：' }}</p>
+
+            <div v-if="pureQuestions.length" class="empty-actions">
+              <button class="outline-btn" type="button" @click="resetFilters">清空筛选</button>
+            </div>
+
+            <div v-else class="empty-guide-grid">
+              <div class="guide-card" @click="$router.push({ name: 'jd-analysis' })">
+                <div class="guide-icon guide-icon--jd">
+                  <svg viewBox="0 0 24 24" fill="none" width="20" height="20"><path d="M21 6H3a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2Z" stroke="currentColor" stroke-width="1.5" /></svg>
+                </div>
+                <h4>从 JD 分析生成</h4>
+                <p>粘贴目标岗位 JD，AI 自动生成针对性面试题</p>
+              </div>
+              <div class="guide-card" @click="showAiDialog = true">
+                <div class="guide-icon guide-icon--ai">
+                  <svg viewBox="0 0 24 24" fill="none" width="20" height="20"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3L12 3Z" stroke="currentColor" stroke-width="1.5" /></svg>
+                </div>
+                <h4>AI 智能生成</h4>
+                <p>输入岗位方向，AI 生成常见面试题和参考答案</p>
+              </div>
+              <div class="guide-card" @click="showAddDialog = true">
+                <div class="guide-icon guide-icon--add">
+                  <svg viewBox="0 0 24 24" fill="none" width="20" height="20"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
+                </div>
+                <h4>手动添加</h4>
+                <p>记录面试中遇到的真题，积累个人题库</p>
+              </div>
+            </div>
+          </div>
+
+          <div v-else class="question-grid">
+            <article v-for="question in filteredQuestions" :key="question.id ?? question.content" class="question-card">
+              <button
+                class="card-delete-btn"
+                type="button"
+                title="删除题目"
+                @click.stop="deleteQuestion(question)"
+              >
+                <svg viewBox="0 0 24 24" fill="none" width="15" height="15">
+                  <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </button>
+
+              <div class="card-head">
+                <span class="category-pill">{{ question.category || '未分类' }}</span>
+                <span class="meta-pill">{{ masteryLabel(question.mastery_level) }}</span>
+              </div>
+
+              <h2>{{ question.content }}</h2>
+
+              <div class="card-meta">
+                <span>{{ formatDate(question.created_at) }}</span>
+                <span v-if="question.reference_answer">有参考答案</span>
+                <span v-if="question.focus_area">{{ question.focus_area }}</span>
+              </div>
+
+              <div class="tag-row">
+                <span v-for="tag in question.tags?.slice(0, 5)" :key="tag" class="tag-pill">#{{ tag }}</span>
+                <span v-if="!question.tags?.length" class="tag-pill muted">未标注标签</span>
+              </div>
+
+              <div class="source-row">
+                <SourceBadge
+                  :source-type="question.source_type"
+                  :source-url="question.source_url"
+                  :is-grounded="question.is_grounded"
+                  :resume-anchor="question.resume_anchor"
+                />
+              </div>
+
+              <footer class="card-actions">
+                <button class="card-btn" type="button" @click="openQuestion(question)">查看</button>
+                <button class="card-btn primary" type="button" @click="startPractice([question])">练习</button>
+              </footer>
+            </article>
+          </div>
+        </template>
     </main>
 
+    <!-- 题库详情弹窗 -->
     <Transition name="modal-fade">
       <AddQuestionDialog
         v-if="showAddDialog"
@@ -568,6 +585,9 @@ onMounted(() => {
         @saved="showRealExperienceDialog = false"
       />
     </Transition>
+
+    <!-- 自测训练弹窗 -->
+    <QuizTrainingDialog :open="showQuizDialog" @close="showQuizDialog = false" />
 
     <Transition name="modal-fade">
       <div v-if="selectedQuestion" class="modal-overlay" @click="closeQuestion">
@@ -757,93 +777,19 @@ onMounted(() => {
   gap: 12px;
 }
 
-.qb-header,
-.header-actions,
-.stat-strip,
-.toolbar,
-.card-head,
-.card-meta,
-.tag-row,
-.card-actions,
-.section-row,
-.modal-footer,
-.empty-actions,
-.note-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* 空状态引导卡片 */
-.empty-guide-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  margin-top: 16px;
-  width: 100%;
-  max-width: 640px;
-}
-
-.guide-card {
-  padding: 16px;
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  background: var(--bg-card);
-  cursor: pointer;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  transition: all 0.2s ease;
-}
-
-.guide-card:hover {
-  border-color: var(--primary-500);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06);
-}
-
-.guide-card h4 {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.guide-card p {
-  margin: 0;
-  font-size: 11px;
-  color: var(--text-muted);
-  line-height: 1.4;
-}
-
-.guide-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.guide-icon--jd { background: rgba(43, 123, 184, 0.1); color: var(--primary-500); }
-.guide-icon--ai { background: rgba(26, 143, 94, 0.1); color: var(--accent-green); }
-.guide-icon--add { background: rgba(224, 138, 58, 0.1); color: var(--accent-orange); }
-
-@media (max-width: 640px) {
-  .empty-guide-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
 .qb-header {
+  display: flex;
+  align-items: flex-start;
   justify-content: space-between;
+  gap: 24px;
   flex-shrink: 0;
 }
 
-.header-copy {
-  min-width: 0;
+.header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
 }
 
 .header-copy h1 {
@@ -860,6 +806,98 @@ onMounted(() => {
   font-size: 13px;
 }
 
+/* Tab 切换 */
+.tab-switcher {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 11px;
+  align-self: flex-start;
+}
+
+.tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background-color 0.16s ease, color 0.16s ease;
+}
+
+.tab-btn:hover {
+  background: rgba(43, 123, 184, 0.06);
+  color: var(--text-primary);
+}
+
+.tab-btn.active {
+  background: var(--primary-600);
+  color: #fff;
+}
+
+.tab-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tab-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.tab-icon path,
+.tab-icon circle,
+.tab-icon rect {
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}
+
+.tab-label {
+  line-height: 1;
+}
+
+.tab-count {
+  padding: 2px 7px;
+  background: var(--bg-card-muted);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.tab-btn.active .tab-count {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+.tab-badge {
+  padding: 2px 7px;
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.tab-btn:not(.active) .tab-badge {
+  background: var(--primary-500);
+  color: #fff;
+}
+
+/* 按钮样式 */
+.header-actions,
 .action-btn,
 .outline-btn,
 .reset-btn,
@@ -867,13 +905,18 @@ onMounted(() => {
 .text-btn {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
   gap: 7px;
   border: 1px solid transparent;
   border-radius: 8px;
   font-weight: 800;
   cursor: pointer;
   white-space: nowrap;
+}
+
+.header-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
 }
 
 .action-btn {
@@ -889,40 +932,75 @@ onMounted(() => {
   box-shadow: 0 8px 18px color-mix(in srgb, var(--primary-500) 18%, transparent);
 }
 
+.action-btn.primary:hover,
+.card-btn.primary:hover {
+  background: var(--primary-700);
+  transform: translateY(-1px);
+}
+
 .action-btn.secondary {
   color: var(--primary-600);
   background: color-mix(in srgb, var(--primary-500) 7%, var(--bg-card));
   border-color: color-mix(in srgb, var(--primary-500) 16%, transparent);
 }
 
+.action-btn.secondary:hover {
+  background: color-mix(in srgb, var(--primary-500) 12%, var(--bg-card));
+  border-color: var(--primary-500);
+}
+
+/* 统计条 */
 .stat-strip {
-  min-height: 34px;
-  padding: 5px 8px;
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 0 20px;
   border: 1px solid var(--border-color);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--bg-card-muted) 62%, transparent);
+  border-radius: 11px;
+  background: var(--bg-card);
   flex-shrink: 0;
   flex-wrap: wrap;
 }
 
+.stat-strip.quiz-stats {
+  background: rgba(43, 123, 184, 0.04);
+  border-color: var(--border-accent);
+}
+
 .stat-strip span {
   display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 24px;
-  padding: 0 8px;
-  border-radius: 7px;
+  align-items: baseline;
+  gap: 7px;
+  padding: 12px 22px;
   color: var(--text-secondary);
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
+  position: relative;
+}
+
+.stat-strip span:first-child {
+  padding-left: 0;
+}
+
+.stat-strip span + span::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1px;
+  height: 18px;
+  background: var(--border-color);
 }
 
 .stat-strip strong {
   color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
 }
 
+/* 筛选工具栏 */
 .toolbar {
   display: grid;
   grid-template-columns: minmax(280px, 1fr) minmax(140px, 0.38fr) minmax(130px, 0.34fr) minmax(130px, 0.34fr) minmax(130px, 0.34fr) auto;
@@ -994,13 +1072,38 @@ onMounted(() => {
   font-size: 12px;
 }
 
-.question-area {
+.reset-btn:hover:not(:disabled),
+.outline-btn:hover:not(:disabled),
+.card-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: var(--primary-500);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* 主内容区 */
+.main-content {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   padding-right: 4px;
 }
 
+.quiz-content {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.quiz-content.full {
+  height: 100%;
+  overflow: hidden;
+}
+
+/* 题目网格 */
 .question-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
@@ -1025,7 +1128,6 @@ onMounted(() => {
   box-shadow: 0 13px 26px rgba(28, 64, 102, 0.08);
 }
 
-/* 悬停显示的删除按钮 */
 .card-delete-btn {
   position: absolute;
   top: 10px;
@@ -1054,8 +1156,10 @@ onMounted(() => {
   color: var(--accent-red);
 }
 
-.card-head,
-.tag-row {
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
@@ -1100,6 +1204,9 @@ onMounted(() => {
 }
 
 .card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex-wrap: wrap;
   margin-bottom: 10px;
   color: var(--text-muted);
@@ -1118,13 +1225,23 @@ onMounted(() => {
   vertical-align: middle;
 }
 
+.tag-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .source-row {
   margin-top: 8px;
   margin-bottom: 4px;
 }
 
 .card-actions {
+  display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 8px;
   margin-top: auto;
   padding-top: 14px;
 }
@@ -1135,6 +1252,7 @@ onMounted(() => {
   border-color: color-mix(in srgb, var(--accent-red) 20%, var(--border-color));
 }
 
+/* 状态盒子 */
 .state-box {
   display: flex;
   flex-direction: column;
@@ -1175,6 +1293,195 @@ onMounted(() => {
   to { transform: rotate(360deg); }
 }
 
+/* 空状态引导卡片 */
+.empty-guide-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 16px;
+  width: 100%;
+  max-width: 640px;
+}
+
+.guide-card {
+  padding: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--bg-card);
+  cursor: pointer;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+
+.guide-card:hover {
+  border-color: var(--primary-500);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06);
+}
+
+.guide-card h4 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.guide-card p {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.guide-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.guide-icon--jd { background: rgba(43, 123, 184, 0.1); color: var(--primary-500); }
+.guide-icon--ai { background: rgba(26, 143, 94, 0.1); color: var(--accent-green); }
+.guide-icon--add { background: rgba(224, 138, 58, 0.1); color: var(--accent-orange); }
+
+/* 技术自测历史 */
+.quiz-history {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 20px;
+  max-width: 800px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.history-header {
+  text-align: center;
+}
+
+.history-header h3 {
+  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.history-header h3 svg {
+  width: 20px;
+  height: 20px;
+  color: var(--primary-600);
+}
+
+.history-header h3 path {
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}
+
+.history-header p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.history-card {
+  padding: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+}
+
+.history-card-main {
+  margin-bottom: 12px;
+}
+
+.history-card h4 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.session-date {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.session-stats {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.stat-item {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.stat-item.correct {
+  color: var(--accent-green);
+  font-weight: 600;
+}
+
+.history-card-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 60px 20px;
+  text-align: center;
+}
+
+.empty-icon {
+  display: inline-flex;
+  width: 56px;
+  height: 56px;
+  color: var(--primary-500);
+  opacity: 0.5;
+}
+
+.empty-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.empty-icon path,
+.empty-icon rect {
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}
+
+.empty-state p {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+/* 模态框样式 */
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -1249,7 +1556,10 @@ onMounted(() => {
 }
 
 .section-row {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
+  gap: 8px;
 }
 
 .detail-section h3 {
@@ -1402,6 +1712,11 @@ onMounted(() => {
   background: var(--primary-500);
 }
 
+.mastery-dot:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: var(--primary-500);
+}
+
 .text-btn {
   min-height: 28px;
   padding: 0 10px;
@@ -1417,7 +1732,6 @@ onMounted(() => {
   border-color: var(--border-color);
 }
 
-/* AI 生成参考答案按钮 */
 .ai-gen-btn {
   display: inline-flex;
   align-items: center;
@@ -1446,7 +1760,8 @@ onMounted(() => {
   cursor: wait;
 }
 
-.answer-actions {
+.answer-actions,
+.note-actions {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1467,27 +1782,16 @@ onMounted(() => {
 }
 
 .modal-footer {
+  display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 8px;
   padding: 16px 32px;
   border-top: 1px solid var(--border-color);
   background: var(--bg-card-muted);
 }
 
-.action-btn:hover:not(:disabled),
-.outline-btn:hover:not(:disabled),
-.reset-btn:hover:not(:disabled),
-.card-btn:hover:not(:disabled),
-.text-btn:hover:not(:disabled),
-.mastery-dot:hover:not(:disabled) {
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--primary-500) 24%, var(--border-color));
-}
-
-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
+/* 动画 */
 .modal-fade-enter-active,
 .modal-fade-leave-active {
   transition: opacity 0.25s ease;
@@ -1507,9 +1811,20 @@ button:disabled {
   background: var(--border-color);
 }
 
+/* 响应式 */
 @media (max-width: 1080px) {
   .qb-page {
     padding: 18px;
+  }
+
+  .qb-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+  }
+
+  .header-actions {
+    justify-content: stretch;
   }
 
   .toolbar {
@@ -1522,24 +1837,27 @@ button:disabled {
 }
 
 @media (max-width: 760px) {
-  .qb-header,
-  .header-actions,
-  .toolbar,
-  .card-actions,
-  .modal-footer {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-  }
-
   .question-grid {
     grid-template-columns: 1fr;
   }
 
   .action-btn,
-  .card-btn,
-  .reset-btn {
+  .card-btn {
     width: 100%;
+    justify-content: center;
+  }
+
+  .header-actions {
+    flex-wrap: wrap;
+  }
+
+  .tab-switcher {
+    width: 100%;
+  }
+
+  .tab-btn {
+    flex: 1;
+    justify-content: center;
   }
 
   .modal-overlay {
@@ -1551,6 +1869,10 @@ button:disabled {
   .modal-footer {
     padding-left: 20px;
     padding-right: 20px;
+  }
+
+  .empty-guide-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

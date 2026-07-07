@@ -18,6 +18,7 @@ import {
   type SearchProviderConfig,
   type SearchProviderId,
 } from '@/stores/aiConfig'
+import { testSearchProviderConnection } from '@/services/searchService'
 
 const store = useAiConfigStore()
 
@@ -954,6 +955,7 @@ interface FeatureOverrideRow {
 
 const FEATURE_ROWS: { feature: AiFeature; label: string; desc: string }[] = [
   { feature: 'resumeOptimize', label: '简历优化', desc: '简历 AI 改写、优化建议' },
+  { feature: 'resumeReview', label: '简历审查', desc: 'AI 简历审查打分、优化清单' },
   { feature: 'jdAnalysis', label: 'JD 分析', desc: 'JD 解析、匹配、优化' },
   { feature: 'interview', label: '面试对话', desc: 'AI 模拟面试、专项训练' },
   { feature: 'jdCompanyIntel', label: '公司情报', desc: '公司背景、竞品调研' },
@@ -1031,7 +1033,6 @@ async function handleTestSearchProvider(providerId: SearchProviderId) {
   searchTesting[providerId] = true
   searchTestResult[providerId] = null
   try {
-    const { testSearchProviderConnection } = await import('@/services/searchService')
     await testSearchProviderConnection({
       id: provider.id,
       enabled: provider.enabled,

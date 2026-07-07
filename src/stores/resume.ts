@@ -68,6 +68,44 @@ export interface AwardEntry {
   description: string
 }
 
+export interface PersonalWorkEntry {
+  id: string
+  name: string
+  type: string
+  link: string
+  description: string
+  contribution: string
+  techStack: string
+  outcome: string
+}
+
+export interface TrainingEntry {
+  id: string
+  institution: string
+  course: string
+  credential: string
+  startDate: string
+  endDate: string
+  location: string
+  description: string
+  outcome: string
+}
+
+export interface CustomSectionItem {
+  id: string
+  title: string
+  subtitle: string
+  date: string
+  link: string
+  description: string
+}
+
+export interface CustomSection {
+  id: string
+  title: string
+  items: CustomSectionItem[]
+}
+
 export interface ModuleConfig {
   key: string
   label: string
@@ -98,7 +136,10 @@ const DEFAULT_MODULE_ORDER = [
   'skills',
   'workExperience',
   'projectExperience',
+  'personalWorks',
+  'trainingExperience',
   'awards',
+  'customSections',
   'selfIntro',
 ] as const
 
@@ -148,6 +189,53 @@ function normalizeAwardEntryDate(entry: AwardEntry): AwardEntry {
   }
 }
 
+function normalizePersonalWorkEntry(entry: PersonalWorkEntry): PersonalWorkEntry {
+  return {
+    id: entry.id,
+    name: entry.name ?? '',
+    type: entry.type ?? '',
+    link: entry.link ?? '',
+    description: entry.description ?? '',
+    contribution: entry.contribution ?? '',
+    techStack: entry.techStack ?? '',
+    outcome: entry.outcome ?? '',
+  }
+}
+
+function normalizeTrainingEntry(entry: TrainingEntry): TrainingEntry {
+  return {
+    id: entry.id,
+    institution: entry.institution ?? '',
+    course: entry.course ?? '',
+    credential: entry.credential ?? '',
+    startDate: normalizeMonthInputValue(entry.startDate),
+    endDate: normalizeMonthInputValue(entry.endDate),
+    location: entry.location ?? '',
+    description: entry.description ?? '',
+    outcome: entry.outcome ?? '',
+  }
+}
+
+function normalizeCustomSectionItem(entry: CustomSectionItem): CustomSectionItem {
+  return {
+    id: entry.id,
+    title: entry.title ?? '',
+    subtitle: entry.subtitle ?? '',
+    date: normalizeMonthInputValue(entry.date),
+    link: entry.link ?? '',
+    description: entry.description ?? '',
+  }
+}
+
+function normalizeCustomSection(section: CustomSection): CustomSection {
+  const rawItems = Array.isArray(section.items) ? section.items : []
+  return {
+    id: section.id,
+    title: section.title ?? '',
+    items: rawItems.map((item) => normalizeCustomSectionItem(item)),
+  }
+}
+
 function moveListEntry<T>(list: T[], index: number, direction: MoveDirection) {
   const target = direction === 'up' ? index - 1 : index + 1
   if (index < 0 || target < 0 || target >= list.length) return
@@ -160,6 +248,31 @@ function moveListEntry<T>(list: T[], index: number, direction: MoveDirection) {
   list[target] = current
 }
 
+function ensureDefaultModuleOrder(modules: ModuleConfig[], shouldUseDefaultOrder: boolean): ModuleConfig[] {
+  if (!shouldUseDefaultOrder) return modules
+
+  const byKey = new Map<string, ModuleConfig>()
+  modules.forEach((mod) => {
+    if (mod?.key) byKey.set(mod.key, mod)
+  })
+
+  const nextModules: ModuleConfig[] = []
+  const seen = new Set<string>()
+
+  const append = (key: string) => {
+    if (seen.has(key)) return
+    const mod = byKey.get(key)
+    if (!mod) return
+    seen.add(key)
+    nextModules.push(mod)
+  }
+
+  DEFAULT_MODULE_ORDER.forEach((key) => append(key))
+  modules.forEach((mod) => append(mod.key))
+
+  return nextModules
+}
+
 export const useResumeStore = defineStore('resume', () => {
   const modules = reactive<ModuleConfig[]>([
     { key: 'basicInfo', label: '基本信息', icon: '👤', visible: true },
@@ -167,7 +280,10 @@ export const useResumeStore = defineStore('resume', () => {
     { key: 'skills', label: '专业技能', icon: '⚡', visible: true },
     { key: 'workExperience', label: '工作经历', icon: '💼', visible: true },
     { key: 'projectExperience', label: '项目经历', icon: '📁', visible: true },
+    { key: 'personalWorks', label: '个人作品', icon: '🔗', visible: true },
+    { key: 'trainingExperience', label: '培训经历', icon: '📚', visible: false },
     { key: 'awards', label: '荣誉奖项', icon: '🏆', visible: false },
+    { key: 'customSections', label: '自定义模块', icon: '🧩', visible: false },
     { key: 'selfIntro', label: '个人简介', icon: '📝', visible: false },
   ])
 
@@ -238,13 +354,53 @@ export const useResumeStore = defineStore('resume', () => {
   ])
 
   const awardList = reactive<AwardEntry[]>([])
+  const personalWorkList = reactive<PersonalWorkEntry[]>([
+    {
+      id: genId(),
+      name: '',
+      type: '',
+      link: '',
+      description: '',
+      contribution: '',
+      techStack: '',
+      outcome: '',
+    },
+  ])
+  const trainingList = reactive<TrainingEntry[]>([
+    {
+      id: genId(),
+      institution: '',
+      course: '',
+      credential: '',
+      startDate: '',
+      endDate: '',
+      location: '',
+      description: '',
+      outcome: '',
+    },
+  ])
+  const customSectionList = reactive<CustomSection[]>([
+    {
+      id: genId(),
+      title: '自定义模块',
+      items: [
+        {
+          id: genId(),
+          title: '',
+          subtitle: '',
+          date: '',
+          link: '',
+          description: '',
+        },
+      ],
+    },
+  ])
   const selfIntro = ref('')
   const showProjectSubtitles = ref(true)
   const selectedTemplateKey = ref<ResumeTemplateKey>('default')
   const templateCustomizations = reactive<Record<string, TemplateCustomization>>({})
   const nextAutoSaveAt = ref<number | null>(null)
   const lastSavedAt = ref<number | null>(null)
-  const lastSaveMode = ref<'auto' | 'manual' | null>(null)
   const isSaving = ref(false)
   const importFeedbackText = ref('')
   const importFeedbackVisible = ref(false)
@@ -408,6 +564,107 @@ export const useResumeStore = defineStore('resume', () => {
     if (idx > -1) awardList.splice(idx, 1)
   }
 
+  function addPersonalWork() {
+    personalWorkList.push({
+      id: genId(),
+      name: '',
+      type: '',
+      link: '',
+      description: '',
+      contribution: '',
+      techStack: '',
+      outcome: '',
+    })
+  }
+
+  function removePersonalWork(id: string) {
+    const idx = personalWorkList.findIndex((e) => e.id === id)
+    if (idx > -1) personalWorkList.splice(idx, 1)
+  }
+
+  function movePersonalWork(id: string, direction: MoveDirection) {
+    const idx = personalWorkList.findIndex((e) => e.id === id)
+    moveListEntry(personalWorkList, idx, direction)
+  }
+
+  function addTraining() {
+    trainingList.push({
+      id: genId(),
+      institution: '',
+      course: '',
+      credential: '',
+      startDate: '',
+      endDate: '',
+      location: '',
+      description: '',
+      outcome: '',
+    })
+  }
+
+  function removeTraining(id: string) {
+    const idx = trainingList.findIndex((e) => e.id === id)
+    if (idx > -1) trainingList.splice(idx, 1)
+  }
+
+  function moveTraining(id: string, direction: MoveDirection) {
+    const idx = trainingList.findIndex((e) => e.id === id)
+    moveListEntry(trainingList, idx, direction)
+  }
+
+  function addCustomSection() {
+    customSectionList.push({
+      id: genId(),
+      title: '自定义模块',
+      items: [
+        {
+          id: genId(),
+          title: '',
+          subtitle: '',
+          date: '',
+          link: '',
+          description: '',
+        },
+      ],
+    })
+  }
+
+  function removeCustomSection(id: string) {
+    const idx = customSectionList.findIndex((section) => section.id === id)
+    if (idx > -1) customSectionList.splice(idx, 1)
+  }
+
+  function moveCustomSection(id: string, direction: MoveDirection) {
+    const idx = customSectionList.findIndex((section) => section.id === id)
+    moveListEntry(customSectionList, idx, direction)
+  }
+
+  function addCustomSectionItem(sectionId: string) {
+    const section = customSectionList.find((item) => item.id === sectionId)
+    if (!section) return
+    section.items.push({
+      id: genId(),
+      title: '',
+      subtitle: '',
+      date: '',
+      link: '',
+      description: '',
+    })
+  }
+
+  function removeCustomSectionItem(sectionId: string, itemId: string) {
+    const section = customSectionList.find((item) => item.id === sectionId)
+    if (!section) return
+    const idx = section.items.findIndex((item) => item.id === itemId)
+    if (idx > -1) section.items.splice(idx, 1)
+  }
+
+  function moveCustomSectionItem(sectionId: string, itemId: string, direction: MoveDirection) {
+    const section = customSectionList.find((item) => item.id === sectionId)
+    if (!section) return
+    const idx = section.items.findIndex((item) => item.id === itemId)
+    moveListEntry(section.items, idx, direction)
+  }
+
   function getCustomization(templateKey: string): TemplateCustomization {
     return templateCustomizations[templateKey] ?? {}
   }
@@ -433,7 +690,7 @@ export const useResumeStore = defineStore('resume', () => {
   }
 
   // ── JD 优化建议应用回写 ──
-  type SuggestionSection = 'skills' | 'selfIntro' | 'basicInfo' | 'workExperience' | 'projectExperience'
+  type SuggestionSection = 'skills' | 'selfIntro' | 'basicInfo' | 'workExperience' | 'projectExperience' | 'personalWorks' | 'trainingExperience' | 'customSections'
 
   function applySuggestionToStore(section: string, suggestedText: string): boolean {
     if (!suggestedText.trim()) return false
@@ -502,6 +759,43 @@ export const useResumeStore = defineStore('resume', () => {
           }
           break
         }
+        case 'personalWorks': {
+          if (personalWorkList.length === 0) {
+            addPersonalWork()
+          }
+          const target = personalWorkList[0]
+          if (target) {
+            target.contribution = suggestedText
+            updated = true
+          }
+          break
+        }
+        case 'trainingExperience': {
+          if (trainingList.length === 0) {
+            addTraining()
+          }
+          const target = trainingList[0]
+          if (target) {
+            target.description = suggestedText
+            updated = true
+          }
+          break
+        }
+        case 'customSections': {
+          if (customSectionList.length === 0) {
+            addCustomSection()
+          }
+          const section = customSectionList[0]
+          if (section && section.items.length === 0) {
+            addCustomSectionItem(section.id)
+          }
+          const target = section?.items[0]
+          if (target) {
+            target.description = suggestedText
+            updated = true
+          }
+          break
+        }
         default:
           console.warn(`${logPrefix} Unsupported section`)
           return false
@@ -519,7 +813,7 @@ export const useResumeStore = defineStore('resume', () => {
   }
 
   function canApplySuggestion(section: string): boolean {
-    return ['skills', 'selfIntro', 'basicInfo', 'workExperience', 'projectExperience'].includes(section)
+    return ['skills', 'selfIntro', 'basicInfo', 'workExperience', 'projectExperience', 'personalWorks', 'trainingExperience', 'customSections'].includes(section)
   }
 
   const STORAGE_KEY = 'resume-builder-data'
@@ -573,6 +867,12 @@ export const useResumeStore = defineStore('resume', () => {
       skills: skills.value,
       workList: workList.map((w) => ({ ...w })),
       projectList: projectList.map((p) => ({ ...p })),
+      personalWorkList: personalWorkList.map((p) => ({ ...p })),
+      trainingList: trainingList.map((p) => ({ ...p })),
+      customSectionList: customSectionList.map((section) => ({
+        ...section,
+        items: section.items.map((item) => ({ ...item })),
+      })),
       awardList: awardList.map((a) => ({ ...a })),
       selfIntro: selfIntro.value,
       templateCustomizations: { ...templateCustomizations },
@@ -581,7 +881,6 @@ export const useResumeStore = defineStore('resume', () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
     nextAutoSaveAt.value = null
     lastSavedAt.value = Date.now()
-    lastSaveMode.value = mode
   }
 
   function loadFromStorage() {
@@ -594,6 +893,7 @@ export const useResumeStore = defineStore('resume', () => {
         ;(data.modules as ModuleConfig[]).forEach((m) => {
           if (m?.key) byKey.set(m.key, m)
         })
+        const hasAllDefaultModules = DEFAULT_MODULE_ORDER.every((key) => byKey.has(key))
 
         const orderedKeys = [
           'basicInfo',
@@ -616,7 +916,7 @@ export const useResumeStore = defineStore('resume', () => {
           nextModules.push({ ...m, ...byKey.get(m.key) })
         })
 
-        modules.splice(0, modules.length, ...nextModules)
+        modules.splice(0, modules.length, ...ensureDefaultModuleOrder(nextModules, !hasAllDefaultModules))
       }
       selectedTemplateKey.value = normalizeResumeTemplateKey(data.selectedTemplateKey ?? data.selectedTemplateId)
       if (data.basicInfo) Object.assign(basicInfo, data.basicInfo)
@@ -629,6 +929,15 @@ export const useResumeStore = defineStore('resume', () => {
       }
       if (data.projectList) {
         projectList.splice(0, projectList.length, ...data.projectList.map(normalizeProjectEntryDates))
+      }
+      if (data.personalWorkList) {
+        personalWorkList.splice(0, personalWorkList.length, ...data.personalWorkList.map(normalizePersonalWorkEntry))
+      }
+      if (data.trainingList) {
+        trainingList.splice(0, trainingList.length, ...data.trainingList.map(normalizeTrainingEntry))
+      }
+      if (data.customSectionList) {
+        customSectionList.splice(0, customSectionList.length, ...data.customSectionList.map(normalizeCustomSection))
       }
       if (data.awardList) {
         awardList.splice(0, awardList.length, ...data.awardList.map(normalizeAwardEntryDate))
@@ -655,6 +964,9 @@ export const useResumeStore = defineStore('resume', () => {
       skills,
       () => JSON.stringify(workList),
       () => JSON.stringify(projectList),
+      () => JSON.stringify(personalWorkList),
+      () => JSON.stringify(trainingList),
+      () => JSON.stringify(customSectionList),
       () => JSON.stringify(awardList),
       selfIntro,
       showProjectSubtitles,
@@ -680,6 +992,9 @@ export const useResumeStore = defineStore('resume', () => {
     skills?: string
     workList?: WorkEntry[]
     projectList?: ProjectEntry[]
+    personalWorkList?: PersonalWorkEntry[]
+    trainingList?: TrainingEntry[]
+    customSectionList?: CustomSection[]
     awardList?: AwardEntry[]
     selfIntro?: string
   }): void {
@@ -702,6 +1017,30 @@ export const useResumeStore = defineStore('resume', () => {
         0,
         projectList.length,
         ...data.projectList.map((p) => normalizeProjectEntryDates({ ...p, id: p.id || genId() })),
+      )
+    if (data.personalWorkList)
+      personalWorkList.splice(
+        0,
+        personalWorkList.length,
+        ...data.personalWorkList.map((p) => normalizePersonalWorkEntry({ ...p, id: p.id || genId() })),
+      )
+    if (data.trainingList)
+      trainingList.splice(
+        0,
+        trainingList.length,
+        ...data.trainingList.map((p) => normalizeTrainingEntry({ ...p, id: p.id || genId() })),
+      )
+    if (data.customSectionList)
+      customSectionList.splice(
+        0,
+        customSectionList.length,
+        ...data.customSectionList.map((section) => normalizeCustomSection({
+          ...section,
+          id: section.id || genId(),
+          items: Array.isArray(section.items)
+            ? section.items.map((item) => ({ ...item, id: item.id || genId() }))
+            : [],
+        })),
       )
     if (data.awardList)
       awardList.splice(
@@ -739,6 +1078,9 @@ export const useResumeStore = defineStore('resume', () => {
     skills.value = ''
     workList.splice(0, workList.length, { id: genId(), company: '', department: '', position: '', startDate: '', endDate: '', location: '', description: '' })
     projectList.splice(0, projectList.length, { id: genId(), name: '', role: '', startDate: '', endDate: '', link: '', introduction: '', mainWork: '' })
+    personalWorkList.splice(0, personalWorkList.length, { id: genId(), name: '', type: '', link: '', description: '', contribution: '', techStack: '', outcome: '' })
+    trainingList.splice(0, trainingList.length, { id: genId(), institution: '', course: '', credential: '', startDate: '', endDate: '', location: '', description: '', outcome: '' })
+    customSectionList.splice(0, customSectionList.length, { id: genId(), title: '自定义模块', items: [{ id: genId(), title: '', subtitle: '', date: '', link: '', description: '' }] })
     awardList.splice(0, awardList.length)
     selfIntro.value = ''
   }
@@ -751,6 +1093,12 @@ export const useResumeStore = defineStore('resume', () => {
       skills: skills.value,
       workList: workList.map((w) => ({ ...w })),
       projectList: projectList.map((p) => ({ ...p })),
+      personalWorkList: personalWorkList.map((p) => ({ ...p })),
+      trainingList: trainingList.map((p) => ({ ...p })),
+      customSectionList: customSectionList.map((section) => ({
+        ...section,
+        items: section.items.map((item) => ({ ...item })),
+      })),
       awardList: awardList.map((a) => ({ ...a })),
       selfIntro: selfIntro.value,
       showProjectSubtitles: showProjectSubtitles.value,
@@ -769,6 +1117,9 @@ export const useResumeStore = defineStore('resume', () => {
     skills,
     workList,
     projectList,
+    personalWorkList,
+    trainingList,
+    customSectionList,
     awardList,
     selfIntro,
     showProjectSubtitles,
@@ -796,6 +1147,18 @@ export const useResumeStore = defineStore('resume', () => {
     moveProject,
     addAward,
     removeAward,
+    addPersonalWork,
+    removePersonalWork,
+    movePersonalWork,
+    addTraining,
+    removeTraining,
+    moveTraining,
+    addCustomSection,
+    removeCustomSection,
+    moveCustomSection,
+    addCustomSectionItem,
+    removeCustomSectionItem,
+    moveCustomSectionItem,
     getCustomization,
     setCustomization,
     resetCustomization,
@@ -805,7 +1168,6 @@ export const useResumeStore = defineStore('resume', () => {
     autoSaveDelayMs: AUTO_SAVE_DELAY_MS,
     nextAutoSaveAt,
     lastSavedAt,
-    lastSaveMode,
     isSaving,
     pendingScrollToModule,
     requestScrollToModule,

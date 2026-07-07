@@ -121,7 +121,10 @@ export function normalizePrepModuleKey(raw: unknown, fallback: JdPrepModuleKey =
     || value === 'skills'
     || value === 'workExperience'
     || value === 'projectExperience'
+    || value === 'personalWorks'
+    || value === 'trainingExperience'
     || value === 'awards'
+    || value === 'customSections'
     || value === 'selfIntro'
   ) {
     return value

@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, reactive, ref, watch, type Component } from 'vue'
+import { useRouter } from 'vue-router'
 import { useResumeStore } from '@/stores/resume'
 import { useResumeVersionsStore } from '@/stores/resumeVersions'
 import { getModuleIconPaths, MODULE_ICON_VIEWBOX } from '@/constants/moduleIcons'
 import AiConfigDialog from '@/components/ai/AiConfigDialog.vue'
 import { useAiConfigStore } from '@/stores/aiConfig'
 
+const router = useRouter()
 const store = useResumeStore()
 const versionsStore = useResumeVersionsStore()
 const AiOptimizePanel = defineAsyncComponent(() => import('@/components/ai/AiOptimizePanel.vue'))
@@ -98,7 +100,10 @@ const expanded = reactive<Record<string, boolean>>({
   skills: false,
   workExperience: false,
   projectExperience: false,
+  personalWorks: false,
+  trainingExperience: false,
   awards: false,
+  customSections: false,
   selfIntro: false,
 })
 
@@ -108,7 +113,10 @@ const editorMap: Record<string, Component> = {
   skills: defineAsyncComponent(() => import('./editors/SkillsEditor.vue')),
   workExperience: defineAsyncComponent(() => import('./editors/WorkExperienceEditor.vue')),
   projectExperience: defineAsyncComponent(() => import('./editors/ProjectExperienceEditor.vue')),
+  personalWorks: defineAsyncComponent(() => import('./editors/PersonalWorksEditor.vue')),
+  trainingExperience: defineAsyncComponent(() => import('./editors/TrainingExperienceEditor.vue')),
   awards: defineAsyncComponent(() => import('./editors/AwardsEditor.vue')),
+  customSections: defineAsyncComponent(() => import('./editors/CustomSectionsEditor.vue')),
   selfIntro: defineAsyncComponent(() => import('./editors/SelfIntroEditor.vue')),
 }
 
@@ -170,8 +178,45 @@ const moduleCompletion = computed<Record<string, number>>(() => {
     ? scoreByFilled([firstProject.name, firstProject.role, firstProject.startDate, firstProject.mainWork])
     : 0
 
+  const firstPersonalWork = store.personalWorkList.find((p) =>
+    [p.name, p.type, p.link, p.description, p.contribution].some((value) => value?.trim())
+  )
+  const personalWorksScore = firstPersonalWork
+    ? scoreByFilled([
+        firstPersonalWork.name,
+        firstPersonalWork.type,
+        firstPersonalWork.link,
+        firstPersonalWork.description,
+        firstPersonalWork.contribution,
+      ])
+    : 0
+
+  const firstTraining = store.trainingList.find((t) =>
+    [t.institution, t.course, t.credential, t.description, t.outcome].some((value) => value?.trim())
+  )
+  const trainingScore = firstTraining
+    ? scoreByFilled([
+        firstTraining.institution,
+        firstTraining.course,
+        firstTraining.credential,
+        firstTraining.description,
+      ])
+    : 0
+
   const firstAward = store.awardList.find((a) => [a.name, a.date].some((value) => value?.trim()))
   const awardsScore = firstAward ? scoreByFilled([firstAward.name, firstAward.date]) : 0
+  const firstCustomItem = store.customSectionList
+    .flatMap((section) => section.items.map((item) => ({ sectionTitle: section.title, ...item })))
+    .find((item) =>
+      [item.sectionTitle, item.title, item.subtitle, item.link, item.description].some((value) => value?.trim())
+    )
+  const customSectionsScore = firstCustomItem
+    ? scoreByFilled([
+        firstCustomItem.sectionTitle,
+        firstCustomItem.title,
+        firstCustomItem.description,
+      ])
+    : 0
 
   return {
     basicInfo: basicInfoScore,
@@ -179,7 +224,10 @@ const moduleCompletion = computed<Record<string, number>>(() => {
     skills: hasTextContent(store.skills) ? 1 : 0,
     workExperience: workScore,
     projectExperience: projectScore,
+    personalWorks: personalWorksScore,
+    trainingExperience: trainingScore,
     awards: awardsScore,
+    customSections: customSectionsScore,
     selfIntro: hasTextContent(store.selfIntro) ? 1 : 0,
   }
 })
@@ -201,6 +249,10 @@ function handleSave() {
   setTimeout(() => {
     showSaved.value = false
   }, 2000)
+}
+
+function goToResumeReview() {
+  router.push({ name: 'resume-review' })
 }
 
 const isAutoSavePending = computed(() => store.nextAutoSaveAt !== null)
@@ -382,7 +434,6 @@ onUnmounted(() => {
               @click="moduleMenuOpen = !moduleMenuOpen"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
-              <span class="hero-action-badge">{{ visibleCount }}</span>
             </button>
             <div
               v-if="moduleMenuOpen"
@@ -469,6 +520,13 @@ onUnmounted(() => {
             </svg>
             <span class="editor-save-chip-text">{{ autoSaveChipText }}</span>
           </span>
+          <button class="btn-review" type="button" title="AI 简历审查打分" @click="goToResumeReview">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M9 11l2 2 4-5" />
+              <path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z" />
+            </svg>
+            <span>AI 审查</span>
+          </button>
           <button class="btn-save" :class="{ 'btn-save-success': showSaved }" @click="handleSave">
             <transition name="save-icon" mode="out-in">
               <svg v-if="showSaved" key="check" class="save-check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
@@ -1037,26 +1095,6 @@ onUnmounted(() => {
   color: var(--accent-blue-600);
 }
 
-.hero-action-badge {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 4px;
-  border-radius: 999px;
-  background: var(--accent-blue-600);
-  color: var(--text-inverse);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1;
-}
-
-
-
 /* ── 模块开关弹出框 ── */
 .hero-module-popover {
   position: absolute;
@@ -1344,6 +1382,33 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   box-shadow: none;
+}
+
+.btn-review {
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border: 1px solid var(--border-color-strong);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--accent-blue-600);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  cursor: pointer;
+}
+
+.btn-review svg {
+  width: 16px;
+  height: 16px;
+}
+
+.btn-review path {
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .btn-save:hover {
@@ -1873,6 +1938,12 @@ onUnmounted(() => {
   border-color: rgba(100, 120, 150, 0.18);
   background: transparent;
   color: var(--text-secondary);
+}
+
+.module-body :deep(.editor-ai-btn.ghost.active) {
+  border-color: rgba(43, 123, 184, 0.38);
+  background: rgba(43, 123, 184, 0.1);
+  color: var(--accent-blue-600);
 }
 
 .module-body :deep(.rich-editor-wrap) {

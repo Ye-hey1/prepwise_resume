@@ -9,5 +9,7 @@ export const GREEN_ICON_LINEAR_TEMPLATE: ResumeTemplateDefinition = {
   name: '绿色图标线性模板',
   previewImage,
   tags: ['绿色', '图标', '小清新', '实习'],
+  category: 'ats',
+  description: '清新绿色风格，适合应届生和实习生',
   component: ResumeTemplate,
 }

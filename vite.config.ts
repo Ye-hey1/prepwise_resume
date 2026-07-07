@@ -69,10 +69,6 @@ export default defineConfig({
             return 'vendor-html2canvas'
           }
 
-          if (id.includes('/node_modules/html2pdf.js/')) {
-            return 'vendor-html2pdf'
-          }
-
           if (id.includes('/node_modules/jspdf/')) {
             return 'vendor-jspdf'
           }

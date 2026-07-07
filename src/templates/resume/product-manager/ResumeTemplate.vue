@@ -4,7 +4,7 @@ import { iconPaths, iconViewBox, isFilledIcon, toHref, type MetaIconKey } from '
 import { useResumeTemplateData } from '../../shared/useResumeTemplateData'
 import { useTemplateCustomization } from '../../shared/useTemplateCustomization'
 
-const { store, hasAnyContent, lineOneMeta, lineTwoMeta, lineThreeMeta, moduleOrderStyle, educationTitleParts, educationTags, workTitleParts, workSideParts, linkHref, dateText, dateRangeText } = useResumeTemplateData()
+const { store, hasAnyContent, lineOneMeta, lineTwoMeta, lineThreeMeta, moduleOrderStyle, educationTitleParts, educationTags, workTitleParts, workSideParts, hasPersonalWorkContent, hasTrainingContent, trainingMetaParts, hasCustomSectionContent, hasCustomSectionItemContent, customItemMetaParts, linkHref, dateText, dateRangeText } = useResumeTemplateData()
 const { cssVars } = useTemplateCustomization()
 
 interface UnifiedMetaItem {
@@ -144,6 +144,35 @@ const allMetaItems = computed<UnifiedMetaItem[]>(() => {
       </section>
 
       <section
+        v-if="store.isModuleVisible('personalWorks') && store.personalWorkList.some(hasPersonalWorkContent)"
+        class="resume-section"
+        :style="moduleOrderStyle('personalWorks')"
+      >
+        <h2 class="section-title">个人作品</h2>
+        <article v-for="work in store.personalWorkList" :key="work.id" class="entry" v-show="hasPersonalWorkContent(work)">
+          <div class="entry-header">
+            <h3 class="entry-company entry-company-wrap">
+              {{ work.name || '未命名作品' }}
+              <span v-if="work.type" class="entry-work-parts"><span>{{ work.type }}</span></span>
+              <span v-if="work.techStack" class="entry-work-parts"><span>{{ work.techStack }}</span></span>
+            </h3>
+          </div>
+          <div class="entry-subtitle" v-if="work.link">
+            <a :href="linkHref(work.link)" target="_blank" rel="noopener noreferrer" class="entry-link">作品链接：{{ work.link }}</a>
+          </div>
+          <div v-if="work.description" class="entry-rich" v-safe-html="work.description"></div>
+          <div v-if="work.contribution">
+            <p v-if="store.showProjectSubtitles" class="project-block-title">我的贡献</p>
+            <div class="entry-rich" v-safe-html="work.contribution"></div>
+          </div>
+          <div v-if="work.outcome">
+            <p v-if="store.showProjectSubtitles" class="project-block-title">成果数据</p>
+            <div class="entry-rich" v-safe-html="work.outcome"></div>
+          </div>
+        </article>
+      </section>
+
+      <section
         v-if="store.isModuleVisible('education') && store.educationList.some((e) => e.school)"
         class="resume-section"
         :style="moduleOrderStyle('education')"
@@ -183,6 +212,50 @@ const allMetaItems = computed<UnifiedMetaItem[]>(() => {
             <span class="entry-date">{{ dateText(award.date) }}</span>
           </div>
           <div v-if="award.description" class="entry-rich" v-safe-html="award.description"></div>
+        </article>
+      </section>
+
+      <section
+        v-if="store.isModuleVisible('trainingExperience') && store.trainingList.some(hasTrainingContent)"
+        class="resume-section"
+        :style="moduleOrderStyle('trainingExperience')"
+      >
+        <h2 class="section-title">培训经历</h2>
+        <article v-for="training in store.trainingList" :key="training.id" class="entry" v-show="hasTrainingContent(training)">
+          <div class="entry-header">
+            <h3 class="entry-company entry-company-wrap">
+              {{ training.institution || training.course || '培训经历' }}
+              <span v-if="training.course && training.institution" class="entry-work-parts"><span>{{ training.course }}</span></span>
+              <span v-for="(part, partIdx) in trainingMetaParts(training)" :key="`${training.id}-training-meta-${partIdx}`" class="entry-work-parts"><span>{{ part }}</span></span>
+            </h3>
+          </div>
+          <div v-if="training.description" class="entry-rich" v-safe-html="training.description"></div>
+          <div v-if="training.outcome">
+            <p v-if="store.showProjectSubtitles" class="project-block-title">成果收获</p>
+            <div class="entry-rich" v-safe-html="training.outcome"></div>
+          </div>
+        </article>
+      </section>
+
+      <section
+        v-for="section in store.customSectionList"
+        v-show="store.isModuleVisible('customSections') && hasCustomSectionContent(section)"
+        :key="section.id"
+        class="resume-section"
+        :style="moduleOrderStyle('customSections')"
+      >
+        <h2 class="section-title">{{ section.title || '自定义模块' }}</h2>
+        <article v-for="item in section.items" :key="item.id" class="entry" v-show="hasCustomSectionItemContent(item)">
+          <div class="entry-header">
+            <h3 class="entry-company entry-company-wrap">
+              {{ item.title || '未命名条目' }}
+              <span v-for="(part, partIdx) in customItemMetaParts(item)" :key="`${item.id}-custom-meta-${partIdx}`" class="entry-work-parts"><span>{{ part }}</span></span>
+            </h3>
+          </div>
+          <div class="entry-subtitle" v-if="item.link">
+            <a :href="linkHref(item.link)" target="_blank" rel="noopener noreferrer" class="entry-link">相关链接：{{ item.link }}</a>
+          </div>
+          <div v-if="item.description" class="entry-rich" v-safe-html="item.description"></div>
         </article>
       </section>
 

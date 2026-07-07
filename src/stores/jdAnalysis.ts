@@ -2,8 +2,12 @@
 import { computed, ref, watch } from 'vue'
 import type { JDData, JDMatchResult, ResumeOverview, JDSuggestion, JdPrepInsight, CompanyIntelData } from '@/services/types/jd'
 import type { InterviewQuestion } from '@/services/jd/interviewBank'
+import { buildJdAnalysisArtifacts, type JdAnalysisArtifacts } from '@/services/jd/artifacts'
 import { buildInterviewDrivenSuggestions, mapScoreBreakdownToWeakModules } from '@/services/jd/weaknessMapping'
 import type { InterviewSessionRecord } from '@/components/ai/interview/types'
+import { useApplicationTrackerStore } from '@/stores/applicationTracker'
+import { useQuestionBankStore } from '@/stores/questionBank'
+import { useLearningProgressStore } from '@/stores/learningProgress'
 
 /** 面试历史 localStorage key（与 useInterviewHistory 保持一致） */
 const INTERVIEW_HISTORY_STORAGE_KEY = 'prepwise_interview_history'
@@ -32,6 +36,7 @@ export interface JdPrepHistoryItem {
   interviewQuestions: InterviewQuestion[]
   interviewBatchSummary: string
   suggestions: JDSuggestion[]
+  artifacts?: JdAnalysisArtifacts | null
   analysisMeta: JdAnalysisMeta | null
   practiceCount?: number
   lastPracticedAt?: string
@@ -71,6 +76,7 @@ interface JdAnalysisStorageData {
   interviewQuestions?: InterviewQuestion[]
   interviewBatchSummary?: string
   suggestions?: JDSuggestion[]
+  artifacts?: JdAnalysisArtifacts | null
   analysisMeta?: JdAnalysisMeta | null
   history?: JdPrepHistoryItem[]
 }
@@ -105,6 +111,13 @@ function normalizeHistoryItem(raw: unknown): JdPrepHistoryItem | null {
     interviewQuestions: Array.isArray(item.interviewQuestions) ? item.interviewQuestions : [],
     interviewBatchSummary: typeof item.interviewBatchSummary === 'string' ? item.interviewBatchSummary : '',
     suggestions: Array.isArray(item.suggestions) ? item.suggestions : [],
+    artifacts: item.artifacts ?? buildJdAnalysisArtifacts({
+      jdData: item.jdData ?? null,
+      matchResult: item.matchResult ?? null,
+      prepInsight: item.prepInsight ?? null,
+      companyIntel: item.companyIntel ?? null,
+      generatedAt: item.updatedAt,
+    }),
     analysisMeta: item.analysisMeta && typeof item.analysisMeta === 'object'
       ? {
           analysisId: typeof item.analysisMeta.analysisId === 'string' && item.analysisMeta.analysisId.trim()
@@ -164,6 +177,13 @@ function migrateStorageData(data: JdAnalysisStorageData): JdAnalysisStorageData 
     interviewQuestions: Array.isArray(data.interviewQuestions) ? data.interviewQuestions : [],
     interviewBatchSummary: typeof data.interviewBatchSummary === 'string' ? data.interviewBatchSummary : '',
     suggestions: Array.isArray(data.suggestions) ? data.suggestions : [],
+    artifacts: data.artifacts ?? buildJdAnalysisArtifacts({
+      jdData: data.jdData ?? null,
+      matchResult: data.matchResult ?? null,
+      prepInsight: data.prepInsight ?? null,
+      companyIntel: data.companyIntel ?? null,
+      generatedAt: data.analysisMeta?.generatedAt,
+    }),
     analysisMeta,
     history,
   }
@@ -182,6 +202,13 @@ export const useJdAnalysisStore = defineStore('jdAnalysis', () => {
   const interviewQuestions = ref<InterviewQuestion[]>([])
   const interviewBatchSummary = ref('')
   const suggestions = ref<JDSuggestion[]>([])
+  const artifacts = computed(() => buildJdAnalysisArtifacts({
+    jdData: jdData.value,
+    matchResult: matchResult.value,
+    prepInsight: prepInsight.value,
+    companyIntel: companyIntel.value,
+    generatedAt: analysisMeta.value?.generatedAt,
+  }))
   const analysisMeta = ref<JdAnalysisMeta | null>(null)
   const history = ref<JdPrepHistoryItem[]>([])
 
@@ -269,6 +296,7 @@ export const useJdAnalysisStore = defineStore('jdAnalysis', () => {
       interviewQuestions: interviewQuestions.value,
       interviewBatchSummary: interviewBatchSummary.value,
       suggestions: suggestions.value,
+      artifacts: artifacts.value,
       analysisMeta: analysisMeta.value,
       history: history.value,
     }
@@ -421,6 +449,7 @@ export const useJdAnalysisStore = defineStore('jdAnalysis', () => {
       interviewQuestions: [...interviewQuestions.value],
       interviewBatchSummary: interviewBatchSummary.value,
       suggestions: [...suggestions.value],
+      artifacts: artifacts.value,
       analysisMeta: nextAnalysisMeta,
       practiceCount: existing?.practiceCount ?? 0,
       lastPracticedAt: existing?.lastPracticedAt ?? '',
@@ -484,6 +513,20 @@ export const useJdAnalysisStore = defineStore('jdAnalysis', () => {
         { phase: 'interview-done', timestamp: practicedAt, score: payload.totalScore },
       ],
       updatedAt: practicedAt,
+    })
+  }
+
+  /** 删除某条面试记录时，从所有 JD 的 linkedInterviewRecordIds 移除并重算练习次数 */
+  function removeLinkedInterviewRecord(interviewRecordId: string) {
+    history.value = history.value.map((item) => {
+      if (!item.linkedInterviewRecordIds?.length) return item
+      if (!item.linkedInterviewRecordIds.includes(interviewRecordId)) return item
+      const linkedInterviewRecordIds = item.linkedInterviewRecordIds.filter((id) => id !== interviewRecordId)
+      return {
+        ...item,
+        linkedInterviewRecordIds,
+        practiceCount: linkedInterviewRecordIds.length,
+      }
     })
   }
 
@@ -556,11 +599,50 @@ export const useJdAnalysisStore = defineStore('jdAnalysis', () => {
     clearTransientState()
   }
 
-  function deleteHistoryItem(id: string) {
+  /** 清理面试历史 localStorage 里关联某个 JD 的记录（analysisId 字段） */
+  function purgeInterviewHistoryByAnalysisId(analysisId: string) {
+    if (typeof localStorage === 'undefined') return
+    try {
+      const raw = localStorage.getItem(INTERVIEW_HISTORY_STORAGE_KEY)
+      if (!raw) return
+      const all = JSON.parse(raw)
+      if (!Array.isArray(all)) return
+      const filtered = all.filter((r: InterviewSessionRecord) => r.analysisId !== analysisId)
+      localStorage.setItem(INTERVIEW_HISTORY_STORAGE_KEY, JSON.stringify(filtered))
+    } catch {
+      // 容错：解析失败时不动数据
+    }
+  }
+
+  /** 删除单条 JD 历史时，级联清理所有关联数据，形成闭环 */
+  async function deleteHistoryItem(id: string) {
+    const trackerStore = useApplicationTrackerStore()
+    const questionStore = useQuestionBankStore()
+    const learningStore = useLearningProgressStore()
+
+    trackerStore.removeTrackerItem(id)
+    const questionCleanupOk = await questionStore.deleteByJdAnalysisId(id)
+    if (!questionCleanupOk) console.warn('[JDAnalysis] 删除 JD 关联题目失败:', id)
+    learningStore.clearByAnalysisId(id)
+    purgeInterviewHistoryByAnalysisId(id)
+
     history.value = history.value.filter((item) => item.id !== id)
   }
 
-  function clearHistory() {
+  /** 清空全部 JD 历史时，逐条级联清理关联数据 */
+  async function clearHistory() {
+    const trackerStore = useApplicationTrackerStore()
+    const questionStore = useQuestionBankStore()
+    const learningStore = useLearningProgressStore()
+
+    for (const item of [...history.value]) {
+      trackerStore.removeTrackerItem(item.id)
+      const questionCleanupOk = await questionStore.deleteByJdAnalysisId(item.id)
+      if (!questionCleanupOk) console.warn('[JDAnalysis] 删除 JD 关联题目失败:', item.id)
+      learningStore.clearByAnalysisId(item.id)
+      purgeInterviewHistoryByAnalysisId(item.id)
+    }
+
     history.value = []
   }
 
@@ -580,6 +662,7 @@ export const useJdAnalysisStore = defineStore('jdAnalysis', () => {
       interviewQuestions,
       interviewBatchSummary,
       suggestions,
+      artifacts,
       analysisMeta,
       history,
     ],
@@ -602,6 +685,7 @@ export const useJdAnalysisStore = defineStore('jdAnalysis', () => {
     interviewQuestions,
     interviewBatchSummary,
     suggestions,
+    artifacts,
     analysisMeta,
     history,
     isLoading,
@@ -636,6 +720,7 @@ export const useJdAnalysisStore = defineStore('jdAnalysis', () => {
     recordInterviewPractice,
     generateInterviewDrivenOptimizations,
     loadLinkedInterviewRecords,
+    removeLinkedInterviewRecord,
     openHistoryItem,
     deleteHistoryItem,
     clearHistory,

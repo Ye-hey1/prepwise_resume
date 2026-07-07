@@ -3,6 +3,10 @@
  * 封装模板变量替换和消息构建为纯函数
  */
 
+function replaceTemplateVariable(template: string, key: string, value: string): string {
+  return template.split(`{${key}}`).join(value)
+}
+
 /** 构建聊天消息数组 */
 export function buildMessages(
   systemPrompt: string,
@@ -11,7 +15,7 @@ export function buildMessages(
 ): Array<{ role: 'system' | 'user'; content: string }> {
   let userMessage = userTemplate
   for (const [key, value] of Object.entries(variables)) {
-    userMessage = userMessage.replace(`{${key}}`, value)
+    userMessage = replaceTemplateVariable(userMessage, key, value)
   }
   return [
     { role: 'system', content: systemPrompt },

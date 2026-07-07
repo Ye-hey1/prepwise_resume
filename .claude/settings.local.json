@@ -3,7 +3,10 @@
     "allow": [
       "Bash(python3:*)",
       "mcp__zread__get_repo_structure",
-      "mcp__zread__read_file"
+      "mcp__zread__read_file",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Skill(update-config)"
     ]
   }
 }

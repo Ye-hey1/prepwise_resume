@@ -33,6 +33,9 @@ interface ResumeImportPayload {
   skills?: string
   workList?: typeof store.workList
   projectList?: typeof store.projectList
+  personalWorkList?: typeof store.personalWorkList
+  trainingList?: typeof store.trainingList
+  customSectionList?: typeof store.customSectionList
   awardList?: typeof store.awardList
   selfIntro?: string
 }
@@ -172,7 +175,7 @@ onMounted(() => {
 
 // 选择性应用状态
 const selectedApplyModules = ref<string[]>([
-  'basicInfo', 'educationList', 'workList', 'projectList', 'skills', 'awardList', 'selfIntro'
+  'basicInfo', 'educationList', 'workList', 'projectList', 'personalWorkList', 'trainingList', 'customSectionList', 'skills', 'awardList', 'selfIntro'
 ])
 
 let abortController: AbortController | null = null
@@ -185,7 +188,10 @@ const hasExistingData = computed(() => {
     store.basicInfo?.phone ||
     (store.workList?.length || 0) > 0 ||
     (store.educationList?.length || 0) > 0 ||
-    (store.projectList?.length || 0) > 0
+    (store.projectList?.length || 0) > 0 ||
+    (store.personalWorkList?.length || 0) > 0 ||
+    (store.trainingList?.length || 0) > 0 ||
+    (store.customSectionList?.length || 0) > 0
   )
 })
 
@@ -197,6 +203,9 @@ const moduleStats = computed(() => {
     education: data.educationList?.length ?? 0,
     work: data.workList?.length ?? 0,
     project: data.projectList?.length ?? 0,
+    personalWorks: data.personalWorkList?.length ?? 0,
+    training: data.trainingList?.length ?? 0,
+    customSections: data.customSectionList?.length ?? 0,
     skills: 1, // 始终显示专业技能框，方便 AI 总结展示喵
     awards: data.awardList?.length ?? 0,
     selfIntro: 1, // 始终显示个人简介框喵
@@ -629,6 +638,9 @@ function applyToResume() {
     payload.basicInfo?.name ? `已识别 ${payload.basicInfo.name}` : (selectedApplyModules.value.length > 0 ? '已应用部分解析' : '未应用任何解析'),
     payload.workList?.length ? `工作 ${payload.workList.length} 段` : '',
     payload.projectList?.length ? `项目 ${payload.projectList.length} 个` : '',
+    payload.personalWorkList?.length ? `作品 ${payload.personalWorkList.length} 个` : '',
+    payload.trainingList?.length ? `培训 ${payload.trainingList.length} 段` : '',
+    payload.customSectionList?.length ? `自定义 ${payload.customSectionList.length} 类` : '',
     payload.educationList?.length ? `教育 ${payload.educationList.length} 段` : '',
   ]
     .filter(Boolean)
@@ -1176,6 +1188,116 @@ onUnmounted(() => {
                 <div v-if="proj.mainWork || proj.description" class="sub-card-desc rich-text hover-editable" @click="startEditing(`projectList.${idx}.mainWork`, proj.mainWork || proj.description || '')" v-safe-html="proj.mainWork || proj.description"></div>
                 <div v-else class="sub-card-desc text-muted hover-editable" @click="startEditing(`projectList.${idx}.mainWork`, '')">点击添加项目描述...</div>
               </template>
+            </div>
+          </div>
+
+          <!-- 个人作品 -->
+          <div v-if="moduleStats.personalWorks" class="result-card">
+            <h3 class="card-title card-title-checkbox">
+              <label class="card-checkbox-label">
+                <input type="checkbox" v-model="selectedApplyModules" value="personalWorkList" />
+                <svg class="card-title-icon" viewBox="0 0 24 24" fill="none"><path d="M10 13a5 5 0 0 0 7.07 0l2.12-2.12a5 5 0 0 0-7.07-7.07L11 4.93" /><path d="M14 11a5 5 0 0 0-7.07 0L4.81 13.12a5 5 0 0 0 7.07 7.07L13 19.07" /></svg>
+                个人作品
+              </label>
+              <span class="card-count">{{ moduleStats.personalWorks }}</span>
+            </h3>
+            <div v-for="(work, idx) in parsedData.personalWorkList" :key="idx" class="sub-card">
+              <div class="sub-card-header-row">
+                <div class="sub-card-header-left">
+                  <span class="sub-card-title">
+                    <span v-if="editingField === `personalWorkList.${idx}.name`" class="inline-edit">
+                      <input v-model="editingValue" class="field-input" @keyup.enter="saveEditing(`personalWorkList.${idx}.name`)" @keyup.esc="cancelEditing" />
+                      <button class="field-action-btn save" @click="saveEditing(`personalWorkList.${idx}.name`)">✓</button>
+                      <button class="field-action-btn cancel" @click="cancelEditing">✕</button>
+                    </span>
+                    <span v-else class="hover-editable" @click="startEditing(`personalWorkList.${idx}.name`, work.name || '')">{{ work.name || '未命名作品' }}</span>
+                  </span>
+
+                  <span v-if="work.link" class="hover-editable text-muted" style="font-size: 11px; margin-left: 8px" @click="startEditing(`personalWorkList.${idx}.link`, work.link || '')">链接：{{ work.link }}</span>
+                  <span v-else class="hover-editable text-muted" style="font-size: 11px; margin-left: 8px" @click="startEditing(`personalWorkList.${idx}.link`, '')">+ 链接</span>
+                </div>
+              </div>
+
+              <div class="sub-card-meta-line">
+                <span class="hover-editable" @click="startEditing(`personalWorkList.${idx}.type`, work.type || '')">{{ work.type || '添加作品类型' }}</span>
+                <span v-if="work.techStack" class="hover-editable" @click="startEditing(`personalWorkList.${idx}.techStack`, work.techStack || '')">{{ work.techStack }}</span>
+                <span v-else class="hover-editable text-muted" @click="startEditing(`personalWorkList.${idx}.techStack`, '')">+ 技术栈/工具</span>
+                <span v-if="work.outcome" class="hover-editable" @click="startEditing(`personalWorkList.${idx}.outcome`, work.outcome || '')">{{ work.outcome }}</span>
+                <span v-else class="hover-editable text-muted" @click="startEditing(`personalWorkList.${idx}.outcome`, '')">+ 成果数据</span>
+              </div>
+
+              <template v-if="editingField === `personalWorkList.${idx}.description`">
+                <textarea v-model="editingValue" class="field-textarea mt-2" rows="3" @keyup.esc="cancelEditing"></textarea>
+                <div class="field-action-row mt-1">
+                  <button class="btn-primary btn-sm" @click="saveEditing(`personalWorkList.${idx}.description`)">保存</button>
+                  <button class="btn-outline btn-sm" @click="cancelEditing">取消</button>
+                </div>
+              </template>
+              <template v-else>
+                <div v-if="work.description" class="sub-card-desc rich-text hover-editable" @click="startEditing(`personalWorkList.${idx}.description`, work.description)" v-safe-html="work.description"></div>
+                <div v-else class="sub-card-desc text-muted hover-editable" @click="startEditing(`personalWorkList.${idx}.description`, '')">点击添加作品简介...</div>
+              </template>
+
+              <template v-if="editingField === `personalWorkList.${idx}.contribution`">
+                <textarea v-model="editingValue" class="field-textarea mt-2" rows="4" @keyup.esc="cancelEditing"></textarea>
+                <div class="field-action-row mt-1">
+                  <button class="btn-primary btn-sm" @click="saveEditing(`personalWorkList.${idx}.contribution`)">保存</button>
+                  <button class="btn-outline btn-sm" @click="cancelEditing">取消</button>
+                </div>
+              </template>
+              <template v-else>
+                <div v-if="work.contribution" class="sub-card-desc rich-text hover-editable" @click="startEditing(`personalWorkList.${idx}.contribution`, work.contribution)" v-safe-html="work.contribution"></div>
+                <div v-else class="sub-card-desc text-muted hover-editable" @click="startEditing(`personalWorkList.${idx}.contribution`, '')">点击添加我的贡献...</div>
+              </template>
+            </div>
+          </div>
+
+          <!-- 培训经历 -->
+          <div v-if="moduleStats.training" class="result-card">
+            <h3 class="card-title card-title-checkbox">
+              <label class="card-checkbox-label">
+                <input type="checkbox" v-model="selectedApplyModules" value="trainingList" />
+                <svg class="card-title-icon" viewBox="0 0 24 24" fill="none"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5z" /></svg>
+                培训经历
+              </label>
+              <span class="card-count">{{ moduleStats.training }}</span>
+            </h3>
+            <div v-for="(training, idx) in parsedData.trainingList" :key="idx" class="sub-card">
+              <div class="sub-card-header-row">
+                <div class="sub-card-header-left">
+                  <span class="sub-card-title">{{ training.institution || training.course || '培训经历' }}</span>
+                  <span v-if="training.course" class="text-muted" style="font-size: 11px; margin-left: 8px">{{ training.course }}</span>
+                </div>
+                <div class="sub-card-time">{{ training.startDate || '' }}<span v-if="training.startDate || training.endDate"> - </span>{{ training.endDate || '' }}</div>
+              </div>
+              <div class="sub-card-meta-line">
+                <span v-if="training.credential">{{ training.credential }}</span>
+                <span v-if="training.location">{{ training.location }}</span>
+              </div>
+              <div v-if="training.description" class="sub-card-desc rich-text" v-safe-html="training.description"></div>
+              <div v-if="training.outcome" class="sub-card-desc rich-text" v-safe-html="training.outcome"></div>
+            </div>
+          </div>
+
+          <!-- 自定义模块 -->
+          <div v-if="moduleStats.customSections" class="result-card">
+            <h3 class="card-title card-title-checkbox">
+              <label class="card-checkbox-label">
+                <input type="checkbox" v-model="selectedApplyModules" value="customSectionList" />
+                <svg class="card-title-icon" viewBox="0 0 24 24" fill="none"><path d="M12 3v18" /><path d="M3 12h18" /><path d="M5 5h4v4H5z" /><path d="M15 15h4v4h-4z" /></svg>
+                自定义模块
+              </label>
+              <span class="card-count">{{ moduleStats.customSections }}</span>
+            </h3>
+            <div v-for="(section, sectionIdx) in parsedData.customSectionList" :key="sectionIdx" class="sub-card">
+              <p class="sub-card-title">{{ section.title || '自定义模块' }}</p>
+              <div v-for="(item, itemIdx) in section.items" :key="itemIdx" class="sub-card-desc">
+                <strong>{{ item.title || '未命名条目' }}</strong>
+                <span v-if="item.subtitle"> · {{ item.subtitle }}</span>
+                <span v-if="item.date"> · {{ item.date }}</span>
+                <div v-if="item.link" class="text-muted">{{ item.link }}</div>
+                <div v-if="item.description" class="rich-text" v-safe-html="item.description"></div>
+              </div>
             </div>
           </div>
 
@@ -2471,6 +2593,16 @@ export function fieldLabel(key: string): string {
   font-size: 13px;
   font-weight: 500;
   color: var(--text-secondary);
+}
+
+.sub-card-meta-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .import-education-meta {

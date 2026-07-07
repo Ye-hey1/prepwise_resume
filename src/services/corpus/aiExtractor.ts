@@ -46,40 +46,6 @@ export class AIExtractor {
   }
 
   /**
-   * 使用 AI 对面试题进行分类
-   */
-  async classifyQuestion(question: string): Promise<{
-    category: string
-    difficulty: number
-    tags: string[]
-  }> {
-    if (!this.config.enabled) {
-      return { category: '未分类', difficulty: 3, tags: [] }
-    }
-
-    try {
-      const prompt = `请对以下面试题进行分类：
-
-题目：${question}
-
-请返回 JSON 格式：
-{
-  "category": "技术/行为/系统设计/算法",
-  "difficulty": 1-5,
-  "tags": ["标签1", "标签2"]
-}
-
-只返回 JSON，不要其他内容。`
-
-      const response = await this.callAI(prompt)
-      return JSON.parse(response)
-    } catch (err) {
-      console.warn('[AIExtractor] Classification failed:', err)
-      return { category: '未分类', difficulty: 3, tags: [] }
-    }
-  }
-
-  /**
    * 使用 AI 评估面试题质量
    */
   async evaluateQuestion(question: string): Promise<{
@@ -202,33 +168,8 @@ export class HybridExtractor {
   }
 
   /**
-   * 混合提取面试题
-   */
-  async extractWithAI(
-    text: string,
-    regexQuestions: ExtractedQuestion[]
-  ): Promise<ExtractedQuestion[]> {
-    // 如果 AI 未启用，直接返回正则结果
-    if (!this.aiExtractor['config'].enabled) {
-      return regexQuestions
-    }
-
-    try {
-      // 使用 AI 识别
-      const aiQuestions = await this.aiExtractor.extractQuestions(text)
-      
-      // 合并结果，去重
-      const merged = this.mergeQuestions(regexQuestions, aiQuestions)
-      
-      return merged
-    } catch (err) {
-      console.warn('[HybridExtractor] AI extraction failed, using regex only:', err)
-      return regexQuestions
-    }
-  }
-
-  /**
-   * 使用 AI 增强正则识别结果
+   * 使用 AI 增强正则识别结果：评估每题是否为真正面试题，过滤掉低置信度内容。
+   * ponytail: 原对每题额外串行 classifyQuestion 分类，结果被丢弃（N 次无效 AI 调用），已删。
    */
   async enhanceQuestions(
     questions: ExtractedQuestion[]
@@ -241,51 +182,16 @@ export class HybridExtractor {
 
     for (const question of questions) {
       try {
-        // 使用 AI 评估是否是真正的面试题
         const evaluation = await this.aiExtractor.evaluateQuestion(question.content)
-        
         if (evaluation.isInterviewQuestion && evaluation.confidence > 0.6) {
-          // 使用 AI 分类
-          const classification = await this.aiExtractor.classifyQuestion(question.content)
-          
-          enhanced.push({
-            ...question,
-            // 可以在这里添加分类信息到 metadata
-          })
+          enhanced.push(question)
         }
-      } catch (err) {
+      } catch {
         // 如果 AI 评估失败，保留原题目
         enhanced.push(question)
       }
     }
 
     return enhanced
-  }
-
-  private mergeQuestions(
-    regexQuestions: ExtractedQuestion[],
-    aiQuestions: AIExtractedQuestion[]
-  ): ExtractedQuestion[] {
-    const merged: ExtractedQuestion[] = [...regexQuestions]
-    const existingContents = new Set(regexQuestions.map(q => q.content.toLowerCase().trim()))
-
-    for (const aiQ of aiQuestions) {
-      const normalized = aiQ.content.toLowerCase().trim()
-      
-      // 检查是否已存在
-      if (!existingContents.has(normalized)) {
-        merged.push({
-          content: aiQ.content,
-          sourceUrl: 'ai_extracted',
-          sourceType: 'real_experience',
-          frequencyScore: aiQ.confidence,
-          recencyScore: 1,
-          isGrounded: true,
-        })
-        existingContents.add(normalized)
-      }
-    }
-
-    return merged
   }
 }

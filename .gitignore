@@ -60,6 +60,7 @@ match-tab-before-run.md
 .playwright-mcp/
 .spec-workflow/
 .codex/
+.worktrees/
 
 # Vite
 *.timestamp-*-*.mjs

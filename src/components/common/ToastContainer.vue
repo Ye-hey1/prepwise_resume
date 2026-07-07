@@ -60,28 +60,32 @@ function getIcon(type: ToastType): string {
   align-items: center;
   gap: 10px;
   padding: 12px 16px;
-  border-radius: 12px;
+  border-radius: 10px;
   background: var(--bg-elevated, #fff);
   border: 1px solid var(--border-color, rgba(0, 0, 0, 0.1));
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  box-shadow: none;
   pointer-events: auto;
   min-width: 280px;
 }
 
 .toast-item--info {
-  border-left: 3px solid var(--accent-info, #2b7bb8);
+  border-color: var(--state-info-border, rgba(43, 123, 184, 0.24));
+  background: color-mix(in srgb, var(--state-info-bg, rgba(43, 123, 184, 0.08)) 70%, var(--bg-elevated, #fff));
 }
 
 .toast-item--success {
-  border-left: 3px solid var(--accent-green, #1a8f5e);
+  border-color: var(--state-success-border, rgba(26, 143, 94, 0.24));
+  background: color-mix(in srgb, var(--state-success-bg, rgba(26, 143, 94, 0.09)) 70%, var(--bg-elevated, #fff));
 }
 
 .toast-item--warning {
-  border-left: 3px solid var(--accent-orange, #e08a3a);
+  border-color: var(--state-warning-border, rgba(224, 138, 58, 0.28));
+  background: color-mix(in srgb, var(--state-warning-bg, rgba(224, 138, 58, 0.1)) 70%, var(--bg-elevated, #fff));
 }
 
 .toast-item--error {
-  border-left: 3px solid var(--accent-red, #d85050);
+  border-color: var(--state-danger-border, rgba(216, 80, 80, 0.24));
+  background: color-mix(in srgb, var(--state-danger-bg, rgba(216, 80, 80, 0.08)) 70%, var(--bg-elevated, #fff));
 }
 
 .toast-icon {
@@ -91,9 +95,9 @@ function getIcon(type: ToastType): string {
 }
 
 .toast-item--info .toast-icon { color: var(--accent-info, #2b7bb8); }
-.toast-item--success .toast-icon { color: var(--accent-green, #1a8f5e); }
-.toast-item--warning .toast-icon { color: var(--accent-orange, #e08a3a); }
-.toast-item--error .toast-icon { color: var(--accent-red, #d85050); }
+.toast-item--success .toast-icon { color: var(--state-success-text, #1a8f5e); }
+.toast-item--warning .toast-icon { color: var(--state-warning-text, #9a5117); }
+.toast-item--error .toast-icon { color: var(--state-danger-text, #b73333); }
 
 .toast-message {
   flex: 1;
@@ -129,11 +133,15 @@ function getIcon(type: ToastType): string {
 
 /* 动画 */
 .toast-enter-active {
-  transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition:
+    opacity var(--duration-base, 250ms) var(--ease-out-quart, ease-out),
+    transform var(--duration-base, 250ms) var(--ease-out-quart, ease-out);
 }
 
 .toast-leave-active {
-  transition: all 0.2s ease-in;
+  transition:
+    opacity var(--duration-fast, 150ms) var(--ease-standard, ease),
+    transform var(--duration-fast, 150ms) var(--ease-standard, ease);
 }
 
 .toast-enter-from {
@@ -147,6 +155,6 @@ function getIcon(type: ToastType): string {
 }
 
 .toast-move {
-  transition: transform 0.3s ease;
+  transition: transform var(--duration-base, 250ms) var(--ease-out-quart, ease-out);
 }
 </style>

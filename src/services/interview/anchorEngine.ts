@@ -45,7 +45,7 @@ export function analyzeResume(resumeText: string): {
   for (const pattern of projectPatterns) {
     let match
     while ((match = pattern.exec(resumeText)) !== null) {
-      const projectName = match[1].trim()
+      const projectName = (match[1] ?? '').trim()
       if (projectName.length > 2 && projectName.length < 100) {
         projects.push({
           name: projectName,
@@ -68,7 +68,7 @@ export function analyzeResume(resumeText: string): {
   for (const pattern of skillPatterns) {
     let match
     while ((match = pattern.exec(resumeText)) !== null) {
-      const skillText = match[1].trim()
+      const skillText = (match[1] ?? '').trim()
       const skillNames = skillText.split(/[,，、]/).map(s => s.trim())
       
       for (const name of skillNames) {

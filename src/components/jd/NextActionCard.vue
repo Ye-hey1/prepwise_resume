@@ -14,14 +14,14 @@ const emit = defineEmits<{
 function phaseLabel(phase: string): string {
   const map: Record<string, string> = {
     'jd-input': 'JD 输入',
-    'analysis': '分析中',
+    'analysis': '智能分析',
     'match-review': '匹配审查',
-    'interview-prep': '面试准备',
+    'interview-prep': '模拟面试',
     'interview-done': '面试完成',
     'weakness-analysis': '弱项分析',
     'resume-optimize': '简历优化',
     're-match': '重新匹配',
-    'loop-complete': '循环达标',
+    'loop-complete': '闭环达标',
   }
   return map[phase] ?? phase
 }

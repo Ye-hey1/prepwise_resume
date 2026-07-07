@@ -9,5 +9,7 @@ export const BLUE_SIDEBAR_CAREER_TEMPLATE: ResumeTemplateDefinition = {
   name: '蓝色侧边栏职场版',
   previewImage,
   tags: ['侧边栏', '设计', '职场', '创意'],
+  category: 'tech',
+  description: '侧边栏设计风格，适合技术和创意岗位',
   component: ResumeTemplate,
 }

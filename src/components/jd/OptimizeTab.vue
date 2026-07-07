@@ -83,6 +83,7 @@ function sectionLabel(s: string) {
     skills: '专业技能',
     workExperience: '工作经历',
     projectExperience: '项目经历',
+    personalWorks: '个人作品',
     awards: '获奖经历',
     selfIntro: '自我评价',
   }
@@ -209,6 +210,7 @@ function applySuggestion(sortedIndex: number) {
     basicInfo: '基本信息',
     workExperience: '工作经历',
     projectExperience: '项目经历',
+    personalWorks: '个人作品',
   }
   resumeStore.showImportFeedback(`已将优化建议应用到「${sectionNames[s.section] || s.section}」模块`)
 }
@@ -256,6 +258,9 @@ function getSectionCurrentValue(section: string): string {
     case 'skills': return data.skills ?? ''
     case 'selfIntro': return data.selfIntro ?? ''
     case 'basicInfo': return data.basicInfo?.jobTitle ?? ''
+    case 'workExperience': return data.workList?.[0]?.description ?? ''
+    case 'projectExperience': return data.projectList?.[0]?.mainWork ?? ''
+    case 'personalWorks': return data.personalWorkList?.[0]?.contribution ?? ''
     default: return ''
   }
 }
@@ -266,6 +271,7 @@ function goToEditor(section: string) {
     : section === 'skills' ? 'skills'
     : section === 'workExperience' ? 'workExperience'
     : section === 'projectExperience' ? 'projectExperience'
+    : section === 'personalWorks' ? 'personalWorks'
     : section === 'awards' ? 'awards'
     : section === 'selfIntro' ? 'selfIntro'
     : 'skills'

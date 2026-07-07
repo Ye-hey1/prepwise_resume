@@ -9,5 +9,7 @@ export const BLACK_WHITE_LINEAR_TEMPLATE: ResumeTemplateDefinition = {
   name: '黑白单色简约模板',
   previewImage,
   tags: ['黑白', '极简', '后端开发', '校招'],
+  category: 'ats',
+  description: '极简黑白风格，经典且兼容性强',
   component: ResumeTemplate,
 }

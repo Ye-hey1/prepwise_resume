@@ -30,6 +30,7 @@ const exporting = ref(false)
 type ExportQualityMode = 'compressed' | 'hd'
 const exportMenuOpen = ref(false)
 const exportMenuRef = ref<HTMLElement | null>(null)
+const exportMenuPanelRef = ref<HTMLElement | null>(null)
 const exportBtnRef = ref<HTMLElement | null>(null)
 const exportMenuStyle = ref<Record<string, string>>({})
 exportMenuStyle.value = {}
@@ -48,6 +49,8 @@ const smartLayoutLabel = ref('智能排版')
 const smartLayoutSnapshot = ref<SmartLayoutParams | null>(null)
 const smartLayoutContentSnapshot = ref<Record<string, string> | null>(null)
 let smartLayoutTimer: ReturnType<typeof setTimeout> | null = null
+let undoAutoHideTimer: ReturnType<typeof setTimeout> | null = null
+const UNDO_AUTO_HIDE_MS = 120000 // 2分钟
 const smartLayoutPanelOpen = ref(false)
 const smartLayoutBtnRef = ref<HTMLElement | null>(null)
 const smartLayoutBtnRect = ref<DOMRect | null>(null)
@@ -296,6 +299,15 @@ onUnmounted(() => {
   }
   window.removeEventListener('resize', updatePreviewScale)
   document.removeEventListener('mousedown', handleDocumentPointerDown)
+  // 清除所有定时器
+  if (undoAutoHideTimer) {
+    clearTimeout(undoAutoHideTimer)
+    undoAutoHideTimer = null
+  }
+  if (smartLayoutTimer) {
+    clearTimeout(smartLayoutTimer)
+    smartLayoutTimer = null
+  }
 })
 
 function handleExportTriggerClick() {
@@ -363,10 +375,14 @@ function handleSmartLayoutLeave() {
 
 function handleDocumentPointerDown(event: MouseEvent) {
   const target = event.target as Node | null
-  if (!target || !exportMenuRef.value) return
-  if (!exportMenuRef.value.contains(target)) {
-    exportMenuOpen.value = false
-  }
+  if (!target) return
+
+  const trigger = exportMenuRef.value
+  const panel = exportMenuPanelRef.value
+  if (!trigger && !panel) return
+  if (trigger?.contains(target) || panel?.contains(target)) return
+
+  exportMenuOpen.value = false
 }
 
 function handleExportMarkdown() {
@@ -1069,6 +1085,11 @@ async function handleSmartLayoutApply(action: string, options?: any) {
     const finalHeight = resumeRef.value?.scrollHeight ?? 0
     smartLayoutSuccess.value = finalHeight <= A4_HEIGHT
     smartLayoutLabel.value = finalHeight <= A4_HEIGHT ? '已完成' : '内容过多'
+
+    // 成功后启动撤销按钮自动隐藏定时器
+    if (smartLayoutSuccess.value) {
+      startUndoAutoHideTimer()
+    }
   } catch {
     smartLayoutSuccess.value = false
     smartLayoutLabel.value = '操作失败'
@@ -1156,7 +1177,26 @@ async function handleAIReduce(level: string = 'moderate') {
   }
 }
 
+function startUndoAutoHideTimer() {
+  // 清除之前的定时器
+  if (undoAutoHideTimer) {
+    clearTimeout(undoAutoHideTimer)
+    undoAutoHideTimer = null
+  }
+  // 启动新的2分钟定时器
+  undoAutoHideTimer = setTimeout(() => {
+    smartLayoutSnapshot.value = null
+    smartLayoutContentSnapshot.value = null
+    undoAutoHideTimer = null
+  }, UNDO_AUTO_HIDE_MS)
+}
+
 function undoSmartLayout() {
+  // 清除自动隐藏定时器
+  if (undoAutoHideTimer) {
+    clearTimeout(undoAutoHideTimer)
+    undoAutoHideTimer = null
+  }
   // 恢复 CSS 参数
   if (smartLayoutSnapshot.value) {
     store.setCustomization(store.selectedTemplateKey, smartLayoutSnapshot.value)
@@ -1309,15 +1349,18 @@ function undoSmartLayout() {
             <Teleport to="body">
               <div 
                 v-if="exportMenuOpen && !exporting" 
+                ref="exportMenuPanelRef"
                 class="export-menu" 
                 :style="exportMenuStyle"
+                @mousedown.stop
+                @click.stop
                 @mouseenter="handleExportMenuEnter"
                 @mouseleave="handleExportMenuLeave"
               >
-                <button class="export-menu-item" @click="exportPDF('hd')">导出高清 PDF</button>
-                <button class="export-menu-item" @click="exportPDF('compressed')">导出压缩 PDF</button>
-                <button class="export-menu-item" @click="exportPNG">导出 PNG 图片</button>
-                <button class="export-menu-item" @click="handleExportMarkdown">导出 Markdown</button>
+                <button class="export-menu-item" type="button" @click="exportPDF('hd')">导出高清 PDF</button>
+                <button class="export-menu-item" type="button" @click="exportPDF('compressed')">导出压缩 PDF</button>
+                <button class="export-menu-item" type="button" @click="exportPNG">导出 PNG 图片</button>
+                <button class="export-menu-item" type="button" @click="handleExportMarkdown">导出 Markdown</button>
               </div>
             </Teleport>
           </div>

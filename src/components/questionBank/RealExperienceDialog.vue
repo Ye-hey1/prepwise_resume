@@ -53,8 +53,8 @@ const stats = ref({
 })
 
 // 进度状态
-const progress = ref({
-  stage: 'connecting' as string,
+const progress = ref<CollectionProgress>({
+  stage: 'connecting',
   progress: 0,
   message: '',
   currentSource: '',
@@ -192,7 +192,7 @@ async function saveSelected() {
 function toggleQuestion(index: number) {
   const question = collectedQuestions.value[index]
   if (question) {
-    question.content = question.content ? '' : collectedQuestions.value[index].content
+    question.content = question.content ? '' : question.content
   }
 }
 
@@ -290,14 +290,6 @@ function loadPreset(preset: string) {
   if (presetConfig) {
     config.value = JSON.parse(JSON.stringify(presetConfig))
   }
-}
-
-// 全选/取消全选
-function toggleAll() {
-  const allSelected = collectedQuestions.value.every(q => q.content)
-  collectedQuestions.value.forEach(q => {
-    q.content = allSelected ? '' : q.content
-  })
 }
 
 const selectedCount = computed(() => 

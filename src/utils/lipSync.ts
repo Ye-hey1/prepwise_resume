@@ -25,7 +25,7 @@ export interface LipSyncFrame {
 }
 
 /** 口型同步播放器状态 */
-export type LipSyncState = 'idle' | 'playing' | 'paused'
+export type LipSyncState = 'idle' | 'playing'
 
 /** 口型同步回调 */
 export interface LipSyncCallbacks {
@@ -174,15 +174,6 @@ export class LipSyncPlayer {
   play(text: string, options?: { speed?: number }): void {
     this.stop()
     this.queue = textToVisemes(text, options)
-    this.currentIndex = 0
-    this.state = 'playing'
-    this.tick()
-  }
-
-  /** 直接播放预计算的帧序列 */
-  playFrames(frames: LipSyncFrame[]): void {
-    this.stop()
-    this.queue = frames
     this.currentIndex = 0
     this.state = 'playing'
     this.tick()

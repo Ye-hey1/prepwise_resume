@@ -92,7 +92,7 @@ export interface ResumeOverview {
 
 // ── JD 岗位备面洞察 ──
 
-export type JdPrepModuleKey = 'basicInfo' | 'education' | 'skills' | 'workExperience' | 'projectExperience' | 'awards' | 'selfIntro'
+export type JdPrepModuleKey = 'basicInfo' | 'education' | 'skills' | 'workExperience' | 'projectExperience' | 'personalWorks' | 'trainingExperience' | 'awards' | 'customSections' | 'selfIntro'
 
 export interface JdRecommendedStory {
   title: string

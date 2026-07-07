@@ -25,6 +25,10 @@ type ImportListRecord = Record<string, string | undefined>
 type ImportEducationRecord = ImportListRecord & {
   tags?: string[]
 }
+type ImportCustomSectionRecord = {
+  title?: string
+  items?: ImportListRecord[]
+}
 type ImportRecordLike = Record<string, string | string[] | undefined>
 
 function importTextField(item: ImportRecordLike, key: string): string {
@@ -38,6 +42,9 @@ export interface ImportData {
   skills?: string
   workList?: ImportListRecord[]
   projectList?: ImportListRecord[]
+  personalWorkList?: ImportListRecord[]
+  trainingList?: ImportListRecord[]
+  customSectionList?: ImportCustomSectionRecord[]
   awardList?: ImportListRecord[]
   selfIntro?: string
 }
@@ -142,6 +149,9 @@ const IMPORT_SECTIONS: ImportSectionConfig[] = [
   { key: 'educationList', label: '教育经历' },
   { key: 'workList', label: '工作经历' },
   { key: 'projectList', label: '项目经历' },
+  { key: 'personalWorkList', label: '个人作品' },
+  { key: 'trainingList', label: '培训经历' },
+  { key: 'customSectionList', label: '自定义模块' },
   { key: 'skills', label: '专业技能' },
   { key: 'awardList', label: '荣誉奖项' },
   { key: 'selfIntro', label: '个人简介' },
@@ -153,6 +163,9 @@ const EMPTY_IMPORT_DATA: ImportData = {
   skills: '',
   workList: [],
   projectList: [],
+  personalWorkList: [],
+  trainingList: [],
+  customSectionList: [],
   awardList: [],
   selfIntro: '',
 }
@@ -163,6 +176,9 @@ const IMPORT_SECTION_EMPTY_VALUE_FACTORIES: Record<ImportSectionKey, () => Impor
   skills: () => '',
   workList: () => [],
   projectList: () => [],
+  personalWorkList: () => [],
+  trainingList: () => [],
+  customSectionList: () => [],
   awardList: () => [],
   selfIntro: () => '',
 }
@@ -174,6 +190,9 @@ function createEmptyImportData(): ImportData {
     skills: '',
     workList: [],
     projectList: [],
+    personalWorkList: [],
+    trainingList: [],
+    customSectionList: [],
     awardList: [],
     selfIntro: '',
   }
@@ -438,6 +457,30 @@ export function convertMarkdownFields(data: ImportData): ImportData {
     }
   }
 
+  if (data.personalWorkList) {
+    for (const work of data.personalWorkList) {
+      work.description = maybeMdToHtml(work.description)
+      work.contribution = maybeMdToHtml(work.contribution)
+      work.outcome = maybeMdToHtml(work.outcome)
+    }
+  }
+
+  if (data.trainingList) {
+    for (const training of data.trainingList) {
+      training.description = maybeMdToHtml(training.description)
+      training.outcome = maybeMdToHtml(training.outcome)
+    }
+  }
+
+  if (data.customSectionList) {
+    for (const section of data.customSectionList) {
+      if (!Array.isArray(section.items)) continue
+      for (const item of section.items) {
+        item.description = maybeMdToHtml(item.description)
+      }
+    }
+  }
+
   if (data.educationList) {
     for (const edu of data.educationList) {
       edu.description = maybeMdToHtml(edu.description)
@@ -595,12 +638,25 @@ function normalizeImportData(raw: unknown): ImportData {
       return out
     })
 
+  const normalizeCustomSections = (items: unknown[]): ImportCustomSectionRecord[] =>
+    items.map((section) => {
+      if (!section || typeof section !== 'object') return { title: '', items: [] }
+      const rawSection = section as JsonRecord
+      return {
+        title: str(rawSection.title),
+        items: normalizeList(arr(rawSection.items)) as ImportListRecord[],
+      }
+    })
+
   return {
     basicInfo,
     educationList: normalizeList(arr(source.educationList), true) as ImportEducationRecord[],
     skills: str(source.skills),
     workList: normalizeList(arr(source.workList)) as ImportListRecord[],
     projectList: normalizeList(arr(source.projectList)) as ImportListRecord[],
+    personalWorkList: normalizeList(arr(source.personalWorkList)) as ImportListRecord[],
+    trainingList: normalizeList(arr(source.trainingList)) as ImportListRecord[],
+    customSectionList: normalizeCustomSections(arr(source.customSectionList)),
     awardList: normalizeList(arr(source.awardList)) as ImportListRecord[],
     selfIntro: str(source.selfIntro ?? source.self_introduction ?? source.summary),
   }

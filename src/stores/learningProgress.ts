@@ -89,33 +89,6 @@ export const useLearningProgressStore = defineStore('learningProgress', () => {
     return latest
   })
 
-  /** 各维度趋势数据 */
-  const dimensionTrends = computed<Record<SkillDimension, TrendPoint[]>>(() => {
-    const trends: Record<SkillDimension, TrendPoint[]> = {
-      technical: [],
-      projectDesign: [],
-      communication: [],
-      problemSolving: [],
-      businessSense: [],
-      systemThinking: [],
-    }
-
-    const sorted = [...records.value].sort(
-      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
-    )
-
-    for (const record of sorted) {
-      for (const dimension of SKILL_DIMENSIONS) {
-        trends[dimension.key].push({
-          timestamp: record.timestamp,
-          score: record.scores[dimension.key] ?? 0,
-        })
-      }
-    }
-
-    return trends
-  })
-
   /** 总分趋势 */
   const totalScoreTrend = computed<TrendPoint[]>(() => {
     return [...records.value]
@@ -131,37 +104,6 @@ export const useLearningProgressStore = defineStore('learningProgress', () => {
     return SKILL_DIMENSIONS
       .filter(d => currentScores.value[d.key] < 60 && currentScores.value[d.key] > 0)
       .map(d => d.key)
-  })
-
-  /** 优势维度（得分高于 80 的维度） */
-  const strongDimensions = computed<SkillDimension[]>(() => {
-    return SKILL_DIMENSIONS
-      .filter(d => currentScores.value[d.key] >= 80)
-      .map(d => d.key)
-  })
-
-  /** 进步最大的维度 */
-  const mostImprovedDimension = computed<SkillDimension | null>(() => {
-    if (records.value.length < 2) return null
-
-    let maxImprovement = 0
-    let bestDimension: SkillDimension | null = null
-
-    for (const dimension of SKILL_DIMENSIONS) {
-      const trend = dimensionTrends.value[dimension.key]
-      if (trend.length < 2) continue
-
-      const first = trend[0]!.score
-      const last = trend[trend.length - 1]!.score
-      const improvement = last - first
-
-      if (improvement > maxImprovement) {
-        maxImprovement = improvement
-        bestDimension = dimension.key
-      }
-    }
-
-    return bestDimension
   })
 
   /** 添加评估记录 */
@@ -298,6 +240,24 @@ export const useLearningProgressStore = defineStore('learningProgress', () => {
     return recommendations
   }
 
+  /** 删除单条评估记录 */
+  function deleteRecord(id: string) {
+    records.value = records.value.filter((r) => r.id !== id)
+    saveToStorage()
+  }
+
+  /** 清理某个 JD 分析关联的所有记录（删 JD 时级联调用） */
+  function clearByAnalysisId(analysisId: string) {
+    records.value = records.value.filter((r) => r.analysisId !== analysisId)
+    saveToStorage()
+  }
+
+  /** 清理某条面试记录关联的评估（删面试记录时级联调用） */
+  function deleteByInterviewRecordId(interviewRecordId: string) {
+    records.value = records.value.filter((r) => r.interviewRecordId !== interviewRecordId)
+    saveToStorage()
+  }
+
   // ── 持久化 ──
 
   function saveToStorage() {
@@ -324,12 +284,12 @@ export const useLearningProgressStore = defineStore('learningProgress', () => {
   return {
     records,
     currentScores,
-    dimensionTrends,
     totalScoreTrend,
     weakDimensions,
-    strongDimensions,
-    mostImprovedDimension,
     addRecord,
+    deleteRecord,
+    clearByAnalysisId,
+    deleteByInterviewRecordId,
     extractDimensionScores,
     generatePracticeRecommendations,
   }

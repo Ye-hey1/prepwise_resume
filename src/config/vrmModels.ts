@@ -33,7 +33,7 @@ export const INTERVIEWER_MODELS: VrmModelInfo[] = [
     name: '方然',
     gender: 'female',
     role: 'interviewer',
-    tag: '资深面试官',
+    tag: 'HR 简历评审',
     url: '/vrm/女面试官方然.vrm',
     ttsVoice: 'claire',
   },
@@ -42,7 +42,7 @@ export const INTERVIEWER_MODELS: VrmModelInfo[] = [
     name: '陆星',
     gender: 'male',
     role: 'interviewer',
-    tag: '技术总监',
+    tag: '技术价值顾问',
     url: '/vrm/男面试官陆星.vrm',
     ttsVoice: 'charles',
   },
@@ -57,7 +57,7 @@ export const CANDIDATE_MODELS: VrmModelInfo[] = [
     name: '明日香',
     gender: 'female',
     role: 'candidate',
-    tag: '前端工程师',
+    tag: '岗位情报分析',
     url: '/vrm/（女）明日香.vrm',
     ttsVoice: 'anna',
   },
@@ -66,16 +66,16 @@ export const CANDIDATE_MODELS: VrmModelInfo[] = [
     name: '米娅',
     gender: 'female',
     role: 'candidate',
-    tag: '产品设计师',
+    tag: '面试训练教练',
     url: '/vrm/（女）米娅.vrm',
     ttsVoice: 'bella',
   },
   {
     id: 'candidate-rayka',
-    name: 'Rayka',
+    name: 'RayKa',
     gender: 'male',
     role: 'candidate',
-    tag: '全栈开发者',
+    tag: '技术成长教练',
     url: '/vrm/（男）Rayka.vrm',
     needsSceneFlip: false,
     flippedSkeleton: true,
@@ -86,7 +86,7 @@ export const CANDIDATE_MODELS: VrmModelInfo[] = [
     name: '约翰·克',
     gender: 'male',
     role: 'candidate',
-    tag: '数据工程师',
+    tag: '求职数据分析',
     url: '/vrm/（男）约翰.克.vrm',
     needsSceneFlip: false,
     flippedSkeleton: true,
@@ -97,7 +97,7 @@ export const CANDIDATE_MODELS: VrmModelInfo[] = [
     name: '谢尔盖',
     gender: 'male',
     role: 'candidate',
-    tag: '后端架构师',
+    tag: '技术面试模拟',
     url: '/vrm/（男）谢尔盖.vrm',
     needsSceneFlip: false,
     flippedSkeleton: true,
@@ -111,9 +111,4 @@ export const ALL_VRM_MODELS: VrmModelInfo[] = [...INTERVIEWER_MODELS, ...CANDIDA
 /** 根据 ID 查找模型 */
 export function getModelById(id: string): VrmModelInfo | undefined {
   return ALL_VRM_MODELS.find(m => m.id === id)
-}
-
-/** 根据角色获取模型列表 */
-export function getModelsByRole(role: 'interviewer' | 'candidate'): VrmModelInfo[] {
-  return role === 'interviewer' ? INTERVIEWER_MODELS : CANDIDATE_MODELS
 }

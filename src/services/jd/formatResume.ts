@@ -11,6 +11,9 @@ export function formatResumeForAI(data: {
   skills: string
   workList: Array<Record<string, string>>
   projectList: Array<Record<string, string>>
+  personalWorkList?: Array<Record<string, string>>
+  trainingList?: Array<Record<string, string>>
+  customSectionList?: Array<Record<string, unknown>>
   awardList: Array<Record<string, string>>
   selfIntro: string
 }): string {
@@ -54,6 +57,32 @@ export function formatResumeForAI(data: {
     parts.push('## 项目经历')
     for (const proj of data.projectList) {
       parts.push(`### ${proj.name || ''} | ${proj.role || ''} | ${proj.startDate || ''}-${proj.endDate || ''}${proj.introduction ? '\n' + stripHtml(proj.introduction) : ''}${proj.mainWork ? '\n' + stripHtml(proj.mainWork) : ''}`)
+    }
+  }
+
+  if (data.personalWorkList?.length) {
+    parts.push('## 个人作品')
+    for (const work of data.personalWorkList) {
+      parts.push(`### ${work.name || ''} | ${work.type || ''}${work.link ? '\n链接：' + work.link : ''}${work.techStack ? '\n技术栈/工具：' + work.techStack : ''}${work.description ? '\n作品简介：' + stripHtml(work.description) : ''}${work.contribution ? '\n我的贡献：' + stripHtml(work.contribution) : ''}${work.outcome ? '\n成果数据：' + stripHtml(work.outcome) : ''}`)
+    }
+  }
+
+  if (data.trainingList?.length) {
+    parts.push('## 培训经历')
+    for (const training of data.trainingList) {
+      parts.push(`### ${training.institution || ''} | ${training.course || ''} | ${training.startDate || ''}-${training.endDate || ''}${training.credential ? '\n证书/资质：' + training.credential : ''}${training.location ? '\n地点/形式：' + training.location : ''}${training.description ? '\n培训内容：' + stripHtml(training.description) : ''}${training.outcome ? '\n成果收获：' + stripHtml(training.outcome) : ''}`)
+    }
+  }
+
+  if (data.customSectionList?.length) {
+    for (const rawSection of data.customSectionList) {
+      const section = rawSection as { title?: string; items?: Array<Record<string, string>> }
+      const entries = Array.isArray(section.items) ? section.items : []
+      if (!section.title || entries.length === 0) continue
+      parts.push(`## ${section.title}`)
+      for (const item of entries) {
+        parts.push(`### ${item.title || ''} | ${item.subtitle || ''}${item.date ? '\n时间：' + item.date : ''}${item.link ? '\n链接：' + item.link : ''}${item.description ? '\n' + stripHtml(item.description) : ''}`)
+      }
     }
   }
 

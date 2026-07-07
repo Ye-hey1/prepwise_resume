@@ -3,6 +3,11 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
+    name: 'workspace-dashboard',
+    component: () => import('@/views/WorkspaceDashboardView.vue'),
+  },
+  {
+    path: '/resume',
     name: 'resume-editor',
     component: () => import('@/views/ResumeEditorView.vue'),
   },
@@ -17,9 +22,29 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/JdAnalysisView.vue'),
   },
   {
+    path: '/project-sop',
+    name: 'project-sop',
+    component: () => import('@/views/ProjectSopView.vue'),
+  },
+  {
+    path: '/applications',
+    name: 'application-tracker',
+    redirect: { name: 'workspace-dashboard', query: { tab: 'tracker' } },
+  },
+  {
+    path: '/training',
+    name: 'training-center',
+    component: () => import('@/views/TrainingCenterView.vue'),
+  },
+  {
     path: '/resume-import',
     name: 'resume-import',
     component: () => import('@/views/ResumeImportView.vue'),
+  },
+  {
+    path: '/resume-review',
+    name: 'resume-review',
+    component: () => import('@/views/ResumeReviewView.vue'),
   },
   {
     path: '/question-bank',

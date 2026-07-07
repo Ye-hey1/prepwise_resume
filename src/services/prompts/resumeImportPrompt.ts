@@ -11,9 +11,9 @@ export const RESUME_IMPORT_SYSTEM_PROMPT = `你是一个专业的简历信息提
 2. 日期格式统一为 "YYYY-MM" 或 "YYYY-MM-DD"，如果无法推断具体日期就留空字符串。
 3. 如果某个字段在简历中找不到，请使用空字符串 "" 而不是 null 或 undefined。切忌胡乱编造！
 4. 列表条目中不需要提供 id 字段。
-5. 工作经历和项目经历按时间倒序排列（最近的排在前面）。
+5. 工作经历、项目经历、个人作品和培训经历按时间倒序或重要程度排列（最近/最重要的排在前面）。
 6. 所有非富文本字段使用纯文本，不要包含 HTML 标签。
-7. 富文本字段（skills、selfIntro、description、introduction、mainWork）使用清晰的纯文本格式：分条目时使用实心圆点「•」符号开头，不要使用加粗符号「**」、不要使用 Markdown 的无序列表符号「-」或「*」。
+7. 富文本字段（skills、selfIntro、description、introduction、mainWork、contribution、outcome）使用清晰的纯文本格式：分条目时使用实心圆点「•」符号开头，不要使用加粗符号「**」、不要使用 Markdown 的无序列表符号「-」或「*」。
 8. 保持文字干练、专业，技能分类使用「分类名称：涉及技术」的形式展示。
 9. 反造假红线（Anti-Hallucination）：无论是本地文字还是图片读取，对于「个人基本信息」、「工作/项目/教育经历」中的专有名词（人名、公司名、学校名、时间日期）必须 100% 忠于原文，绝对不允许有任何弄虚作假或主观推测编造！
 
@@ -78,6 +78,43 @@ export const RESUME_IMPORT_SYSTEM_PROMPT = `你是一个专业的简历信息提
       "mainWork": "主要工作内容（分条目时使用实心圆点 • 排版，不要加粗）"
     }
   ],
+  "personalWorkList": [
+    {
+      "name": "作品名称",
+      "type": "作品类型（如 开源项目、作品集、文章、Demo、设计稿）",
+      "link": "作品链接（如有）",
+      "description": "作品简介（如有）",
+      "contribution": "我的贡献/亮点（分条目时使用实心圆点 • 排版）",
+      "techStack": "技术栈/工具（如有）",
+      "outcome": "成果数据（如 Star、访问量、阅读量、使用人数等，原文没有则留空）"
+    }
+  ],
+  "trainingList": [
+    {
+      "institution": "培训机构/平台",
+      "course": "课程或训练营名称",
+      "credential": "证书/资质/结业证明（如有）",
+      "startDate": "开始时间",
+      "endDate": "结束时间",
+      "location": "地点或形式（如 线上、上海）",
+      "description": "培训内容（如有）",
+      "outcome": "成果收获（如证书、考核、作品或能力提升，原文没有则留空）"
+    }
+  ],
+  "customSectionList": [
+    {
+      "title": "模块标题（如 论文发表、专利成果、志愿经历、社团经历）",
+      "items": [
+        {
+          "title": "条目标题",
+          "subtitle": "补充信息（如作者、角色、级别、平台）",
+          "date": "时间",
+          "link": "相关链接（如有）",
+          "description": "内容描述（如有）"
+        }
+      ]
+    }
+  ],
   "awardList": [
     {
       "name": "奖项名称",
@@ -119,6 +156,26 @@ export const RESUME_IMPORT_SYSTEM_PROMPT = `你是一个专业的简历信息提
 - 请将对应项目的所有文案（包含项目简介、你的工作、负责内容等）全部**原封不动字对字**地放在 mainWork 字段中，不要去拆分 introduction。
 - 绝不提炼大纲！严格保留原始所有的换行符及原始排版。
 - role 填写具体角色（如"前端负责人"、"核心开发者"），而不是泛泛的"开发"。
+
+### 🔗 个人作品（personalWorkList）
+- 提取简历中的"个人作品""作品集""开源项目""个人链接""代表作品""文章/博客作品""Demo"等非公司项目内容。
+- 只提取原文明确出现的作品，不要把正式工作经历或项目经历重复放入个人作品。
+- link 只保留 URL；如果作品链接已在基本信息 website/github/blog 中出现，也可以作为个人作品独立记录，但不要编造作品名称。
+- contribution 放本人对作品的设计、开发、内容创作、维护、运营或亮点说明。
+- outcome 只填写原文明确出现的 Star、访问量、阅读量、用户量、下载量、获奖等结果数据；没有则留空。
+
+### 📚 培训经历（trainingList）
+- 提取简历中的"培训经历""训练营""课程学习""认证培训""研修班""Bootcamp"等内容。
+- 不要把正式学历放入培训经历，学历仍归入 educationList；不要把公司工作项目放入培训经历。
+- credential 只填写原文明确出现的证书、认证、结业证明或资质。
+- description 放课程主题、训练内容、学习模块或实践任务。
+- outcome 放原文明确出现的证书结果、考核结果、作品产出或能力提升；禁止编造证书或成绩。
+
+### 🧩 自定义模块（customSectionList）
+- 用于承接没有固定模块的简历内容，如"论文发表""专利成果""志愿经历""社团经历""校园经历""兴趣爱好""公开演讲""出版物"等。
+- 每类内容创建一个独立 section，title 使用原文模块名称。
+- 不要重复提取已归入教育、工作、项目、个人作品、培训或奖项的内容。
+- item.title 放条目名称；subtitle 放作者/角色/级别/平台等补充信息；date 放时间；link 只保留 URL。
 
 ### ⚡ 专业技能（skills）
 - 提取规则：
@@ -209,6 +266,18 @@ export const RESUME_IMPORT_SECTION_SYSTEM_PROMPTS: Record<string, string> = {
   projectList: `你是简历信息提取助手。只提取项目经历，返回合法 JSON。日期格式 "YYYY-MM"，找不到的字段用空字符串。按时间倒序排列。
 返回格式：{"projectList": [{"name":"","role":"","startDate":"","endDate":"","link":"","introduction":"","mainWork":""}]}
 规则：每个项目独立一条记录；将项目所有文案（简介、工作、负责内容）**原封不动字对字**放在 mainWork 中，不拆分；绝不提炼大纲，严格保留所有换行和排版；role 填具体角色如"前端负责人"。`,
+
+  personalWorkList: `你是简历信息提取助手。只提取个人作品，返回合法 JSON。找不到的字段用空字符串。按重要程度或原文顺序排列。
+返回格式：{"personalWorkList": [{"name":"","type":"","link":"","description":"","contribution":"","techStack":"","outcome":""}]}
+规则：提取"个人作品/作品集/开源项目/代表作品/文章/博客作品/Demo"等非公司项目内容；不要重复正式工作经历或项目经历；link 只保留 URL；contribution 放本人贡献/亮点；outcome 只放原文明确出现的 Star、访问量、阅读量、用户量、下载量、获奖等数据，禁止编造。`,
+
+  trainingList: `你是简历信息提取助手。只提取培训经历，返回合法 JSON。日期格式 "YYYY-MM"，找不到的字段用空字符串。按时间倒序排列。
+返回格式：{"trainingList": [{"institution":"","course":"","credential":"","startDate":"","endDate":"","location":"","description":"","outcome":""}]}
+规则：提取"培训经历/训练营/课程学习/认证培训/研修班/Bootcamp"等内容；不要重复正式学历、工作经历或项目经历；credential 只放原文明确出现的证书/认证/结业证明；outcome 只放原文明确出现的考核、证书、作品或收获，禁止编造。`,
+
+  customSectionList: `你是简历信息提取助手。只提取没有固定模块承接的自定义内容，返回合法 JSON。日期格式 "YYYY-MM"，找不到字段用空字符串。
+返回格式：{"customSectionList": [{"title":"","items":[{"title":"","subtitle":"","date":"","link":"","description":""}]}]}
+规则：提取"论文发表/专利成果/志愿经历/社团经历/校园经历/公开演讲/出版物/兴趣爱好"等内容；每类内容创建一个独立 section；不要重复教育、工作、项目、个人作品、培训或奖项内容；link 只保留 URL。`,
 
   skills: `你是简历信息提取助手。只提取专业技能，返回合法 JSON。
 返回格式：{"skills": "Markdown格式技能列表"}

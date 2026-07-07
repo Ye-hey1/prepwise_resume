@@ -2,7 +2,8 @@ import type { AiConfig } from '@/stores/aiConfig'
 import type { BasicInfo, EducationEntry, ProjectEntry, WorkEntry } from '@/stores/resume'
 import { candidateModeSystemPrompt } from '@/services/prompts/interviewCandidatePrompt'
 import { interviewerModeSystemPrompt } from '@/services/prompts/interviewInterviewerPrompt'
-import { stripHtml as stripHtmlBase, cleanJsonResponse, nonStreamAIRequest, type AiConfig as StreamAiConfig } from '@/services/stream'
+import { stripHtml as stripHtmlBase, cleanJsonResponse } from '@/services/stream'
+import { runJsonTask, type AiTaskIssue } from '@/services/aiTaskRuntime'
 
 export type InterviewMode = 'candidate' | 'interviewer' | 'coaching'
 
@@ -80,11 +81,67 @@ export interface InterviewHintResult {
   referenceAnswer60s: string
 }
 
+const INTERVIEW_HINT_SCHEMA_HINT = `{
+  "questionSummary": string,
+  "questionType": "opening|project|behavior|knowledge|general",
+  "questionIntent": string,
+  "answerFramework": string[],
+  "bullets": string[],
+  "opener": string,
+  "starGuide": string,
+  "referenceAnswer": string,
+  "referenceAnswer30s": string,
+  "referenceAnswer60s": string
+}`
+
+const INTERVIEW_DRILL_SCHEMA_HINT = `[
+  {
+    "id": number,
+    "question": string,
+    "category": string,
+    "focusArea": string,
+    "difficulty": number,
+    "intent": string,
+    "framework": string,
+    "thinkingPoints": string[],
+    "sampleAnswer": string
+  }
+]`
+
+const INTERVIEW_EVALUATION_SCHEMA_HINT = `{
+  "projectScore": number,
+  "skillScore": number,
+  "workScore": number,
+  "educationScore": number,
+  "totalScore": number,
+  "passed": boolean,
+  "summary": string,
+  "improvements": string[]
+}`
+
+const INTERVIEW_COACHING_SCHEMA_HINT = `{
+  "interviewerQuestion": string,
+  "candidateAnswer": string,
+  "coachComment": string,
+  "techniques": string[],
+  "phase": string,
+  "roundIndex": number,
+  "isFinished": boolean,
+  "finalSummary": string,
+  "techniqueSummary": [
+    { "technique": string, "description": string, "example": string }
+  ]
+}`
+
 interface HintQuestionProfile {
   questionType: InterviewHintResult['questionType']
   questionIntent: string
   answerFramework: string[]
   promptGuide: string
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function normalizeHintBullets(input: unknown, fallbackText = ''): string[] {
@@ -232,6 +289,102 @@ function buildHintFallback(
   }
 }
 
+function normalizeHintResult(
+  raw: unknown,
+  questionSummary: string,
+  profile: HintQuestionProfile,
+): InterviewHintResult {
+  const parsed = isRecord(raw) ? raw : {}
+  const questionType = typeof parsed.questionType === 'string' ? parsed.questionType : ''
+
+  return {
+    questionSummary: typeof parsed.questionSummary === 'string' && parsed.questionSummary.trim()
+      ? parsed.questionSummary.trim()
+      : questionSummary,
+    questionType: ['opening', 'project', 'behavior', 'knowledge', 'general'].includes(questionType)
+      ? questionType as InterviewHintResult['questionType']
+      : profile.questionType,
+    questionIntent: typeof parsed.questionIntent === 'string' && parsed.questionIntent.trim()
+      ? parsed.questionIntent.trim()
+      : profile.questionIntent,
+    answerFramework: Array.isArray(parsed.answerFramework)
+      ? parsed.answerFramework.map(String).map(item => item.trim()).filter(Boolean).slice(0, 4)
+      : profile.answerFramework,
+    bullets: normalizeHintBullets(parsed.bullets),
+    opener: typeof parsed.opener === 'string' ? parsed.opener : '',
+    starGuide: typeof parsed.starGuide === 'string' ? parsed.starGuide : '',
+    referenceAnswer: typeof parsed.referenceAnswer === 'string' ? parsed.referenceAnswer : '',
+    referenceAnswer30s: typeof parsed.referenceAnswer30s === 'string' ? parsed.referenceAnswer30s : '',
+    referenceAnswer60s: typeof parsed.referenceAnswer60s === 'string' ? parsed.referenceAnswer60s : '',
+  }
+}
+
+function validateHintResult(result: InterviewHintResult): AiTaskIssue[] {
+  if (result.bullets.length > 0 || result.opener.trim() || result.referenceAnswer.trim()) return []
+  return [{
+    path: '$',
+    message: '答题提示缺少核心思路、开场句和参考表达',
+    severity: 'error',
+  }]
+}
+
+function normalizeDrillQuestions(raw: unknown): DrillQuestionRaw[] {
+  const source = Array.isArray(raw)
+    ? raw
+    : isRecord(raw) && Array.isArray(raw.questions)
+      ? raw.questions
+      : []
+
+  return source
+    .map((item, index): DrillQuestionRaw | null => {
+      const record = isRecord(item) ? item : {}
+      const question = String(record.question ?? '').trim()
+      if (!question) return null
+
+      const rawId = Number(record.id)
+      return {
+        id: Number.isFinite(rawId) && rawId > 0 ? rawId : index + 1,
+        question,
+        category: String(record.category ?? '综合能力').trim() || '综合能力',
+        focusArea: String(record.focusArea ?? '').trim(),
+        difficulty: Math.max(1, Math.min(5, Math.round(Number(record.difficulty) || 3))),
+        intent: typeof record.intent === 'string' ? record.intent.trim() : undefined,
+        framework: typeof record.framework === 'string' ? record.framework.trim() : undefined,
+        thinkingPoints: Array.isArray(record.thinkingPoints)
+          ? record.thinkingPoints.map(String).map(item => item.trim()).filter(Boolean).slice(0, 4)
+          : undefined,
+        sampleAnswer: typeof record.sampleAnswer === 'string'
+          ? record.sampleAnswer.trim()
+          : typeof record.referenceAnswer === 'string'
+            ? record.referenceAnswer.trim()
+            : undefined,
+        referenceAnswer: typeof record.referenceAnswer === 'string' ? record.referenceAnswer.trim() : undefined,
+      }
+    })
+    .filter((item): item is DrillQuestionRaw => Boolean(item))
+}
+
+function validateDrillQuestions(result: DrillQuestionRaw[]): AiTaskIssue[] {
+  return result.length > 0
+    ? []
+    : [{ path: '$', message: '专项训练题生成结果为空', severity: 'error' }]
+}
+
+function normalizeFinalEvaluationOrThrow(raw: unknown): FinalEvaluation {
+  const normalized = normalizeFinalEvaluation(raw)
+  if (!normalized) throw new Error('评估结果为空')
+  return normalized
+}
+
+function validateFinalEvaluation(result: FinalEvaluation): AiTaskIssue[] {
+  if (result.summary.trim() || result.improvements.length > 0) return []
+  return [{
+    path: '$',
+    message: '专项评估缺少总结和改进建议',
+    severity: 'error',
+  }]
+}
+
 export async function requestInterviewHint(
   request: InterviewTurnRequest,
   signal?: AbortSignal
@@ -300,38 +453,24 @@ export async function requestInterviewHint(
     '请给我结构化的答题思路提示。',
   ].join('\n')
 
-  const result = await nonStreamAIRequest(
-    request.config,
-    systemPrompt,
-    userCommand,
-    { temperature: 0.7, maxTokens: 500 },
-    signal,
-  )
-
-  // 尝试解析 JSON
   try {
-    const parsed = JSON.parse(cleanJsonResponse(result)) as Record<string, unknown>
-    const questionType = typeof parsed.questionType === 'string' ? parsed.questionType : ''
-    return {
-      questionSummary: typeof parsed.questionSummary === 'string' && parsed.questionSummary.trim() ? parsed.questionSummary.trim() : questionSummary,
-      questionType: ['opening', 'project', 'behavior', 'knowledge', 'general'].includes(questionType)
-        ? questionType as InterviewHintResult['questionType']
-        : questionProfile.questionType,
-      questionIntent: typeof parsed.questionIntent === 'string' && parsed.questionIntent.trim()
-        ? parsed.questionIntent.trim()
-        : questionProfile.questionIntent,
-      answerFramework: Array.isArray(parsed.answerFramework)
-        ? parsed.answerFramework.map(String).map((item) => item.trim()).filter(Boolean).slice(0, 4)
-        : questionProfile.answerFramework,
-      bullets: normalizeHintBullets(parsed.bullets, result),
-      opener: typeof parsed.opener === 'string' ? parsed.opener : '',
-      starGuide: typeof parsed.starGuide === 'string' ? parsed.starGuide : '',
-      referenceAnswer: typeof parsed.referenceAnswer === 'string' ? parsed.referenceAnswer : '',
-      referenceAnswer30s: typeof parsed.referenceAnswer30s === 'string' ? parsed.referenceAnswer30s : '',
-      referenceAnswer60s: typeof parsed.referenceAnswer60s === 'string' ? parsed.referenceAnswer60s : '',
-    }
-  } catch {
-    return buildHintFallback(result, questionSummary, questionProfile)
+    return await runJsonTask({
+      taskName: 'interview.requestInterviewHint',
+      category: 'interview-hint',
+      config: request.config,
+      systemPrompt,
+      userMessage: userCommand,
+      normalize: raw => normalizeHintResult(raw, questionSummary, questionProfile),
+      validate: validateHintResult,
+      schemaHint: INTERVIEW_HINT_SCHEMA_HINT,
+      requestOptions: { temperature: 0.7, maxTokens: 500 },
+      signal,
+      repair: true,
+    })
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') throw error
+    if (error instanceof Error && /API 请求失败|AI 请求超时|请求已取消/.test(error.message)) throw error
+    return buildHintFallback('', questionSummary, questionProfile)
   }
 }
 
@@ -1005,21 +1144,24 @@ export async function generateDrillQuestions(
 ]`,
     ].join('')
 
-    const content = await nonStreamAIRequest(
-      request.config,
-      systemPrompt,
-      userPrompt,
-      { temperature: 0.7, maxTokens: 1500 },
-      signal,
-    )
-
     try {
-      const questions = JSON.parse(cleanJsonResponse(content)) as DrillQuestionRaw[]
-      if (onProgress && Array.isArray(questions)) {
-        onProgress(questions)
-      }
+      const questions = await runJsonTask({
+        taskName: `interview.generateDrillQuestions.${segment.dimension}`,
+        category: 'interview-drill',
+        config: request.config,
+        systemPrompt,
+        userMessage: userPrompt,
+        normalize: normalizeDrillQuestions,
+        validate: validateDrillQuestions,
+        schemaHint: INTERVIEW_DRILL_SCHEMA_HINT,
+        requestOptions: { temperature: 0.7, maxTokens: 1500 },
+        signal,
+        repair: true,
+      })
+      onProgress?.(questions)
       return questions
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') throw error
       console.warn(`Segment [${segment.dimension}] failed to parse, skipping...`)
       return []
     }
@@ -1083,22 +1225,23 @@ export async function evaluateDrillAnswers(
     `请对每道题进行评分，并给出综合评分报告。`,
   ].join('')
 
-  const content = await nonStreamAIRequest(
-    request.config,
-    systemPrompt,
-    userPrompt,
-    { temperature: 0.4, maxTokens: 2000 },
-    signal,
-  )
-
   try {
-    const parsed = JSON.parse(cleanJsonResponse(content)) as Record<string, unknown>
-    const result = normalizeFinalEvaluation(parsed)
-    if (!result) {
-      throw new Error('评估结果为空')
-    }
-    return result
-  } catch {
+    return await runJsonTask({
+      taskName: 'interview.evaluateDrillAnswers',
+      category: 'interview-evaluation',
+      config: request.config,
+      systemPrompt,
+      userMessage: userPrompt,
+      normalize: normalizeFinalEvaluationOrThrow,
+      validate: validateFinalEvaluation,
+      schemaHint: INTERVIEW_EVALUATION_SCHEMA_HINT,
+      requestOptions: { temperature: 0.4, maxTokens: 2000 },
+      signal,
+      repair: true,
+    })
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') throw error
+    if (error instanceof Error && /API 请求失败|AI 请求超时|请求已取消/.test(error.message)) throw error
     return {
       projectScore: 0,
       skillScore: 0,
@@ -1181,11 +1324,45 @@ function normalizeCoachingResponse(rawContent: string): CoachingTurnResponse {
   }
 }
 
+function normalizeCoachingRaw(raw: unknown): CoachingTurnResponse {
+  const parsed = isRecord(raw) ? raw : {}
+  return {
+    interviewerQuestion: String(parsed.interviewerQuestion ?? '').trim(),
+    candidateAnswer: String(parsed.candidateAnswer ?? '').trim(),
+    coachComment: String(parsed.coachComment ?? '').trim(),
+    techniques: Array.isArray(parsed.techniques)
+      ? parsed.techniques.map(String).filter(Boolean)
+      : [],
+    phase: String(parsed.phase ?? 'opening'),
+    roundIndex: typeof parsed.roundIndex === 'number' ? parsed.roundIndex : 1,
+    isFinished: Boolean(parsed.isFinished),
+    finalSummary: typeof parsed.finalSummary === 'string' ? parsed.finalSummary : undefined,
+    techniqueSummary: Array.isArray(parsed.techniqueSummary)
+      ? parsed.techniqueSummary.map((item) => {
+          const record = isRecord(item) ? item : {}
+          return {
+            technique: String(record.technique ?? ''),
+            description: String(record.description ?? ''),
+            example: String(record.example ?? ''),
+          }
+        })
+      : undefined,
+  }
+}
+
+function validateCoachingResponse(result: CoachingTurnResponse): AiTaskIssue[] {
+  if (result.interviewerQuestion.trim() || result.candidateAnswer.trim() || result.coachComment.trim()) return []
+  return [{
+    path: '$',
+    message: '观摩学习回合缺少面试官问题、候选人回答和教练点评',
+    severity: 'error',
+  }]
+}
+
 export async function requestCoachingTurn(
   request: CoachingTurnRequest,
   signal?: AbortSignal,
 ): Promise<CoachingTurnResponse> {
-  const endpoint = normalizeApiUrl(request.config.apiUrl)
   const systemPrompt = coachingModeSystemPrompt({
     style: (request.interviewerStyle as CoachingStyleType) || 'balanced',
     followUpDepth: request.followUpDepth || 2,
@@ -1206,33 +1383,23 @@ export async function requestCoachingTurn(
     stageRoundIndex: request.stageRoundIndex,
   })
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${request.config.apiToken}`,
-    },
-    body: JSON.stringify({
-      model: request.config.modelName,
-      temperature: 0.7,
-      max_tokens: 1200,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userCommand },
-      ],
-      stream: false,
-    }),
-    signal,
-  })
-
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => '')
-    throw new Error(`AI请求失败 (${response.status}): ${errorText || response.statusText}`)
+  try {
+    return await runJsonTask({
+      taskName: 'interview.requestCoachingTurn',
+      category: 'interview-coaching',
+      config: request.config,
+      systemPrompt,
+      userMessage: userCommand,
+      normalize: normalizeCoachingRaw,
+      validate: validateCoachingResponse,
+      schemaHint: INTERVIEW_COACHING_SCHEMA_HINT,
+      requestOptions: { temperature: 0.7, maxTokens: 1200 },
+      signal,
+      repair: true,
+    })
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') throw error
+    if (error instanceof Error && /API 请求失败|AI 请求超时|请求已取消/.test(error.message)) throw error
+    return normalizeCoachingResponse('')
   }
-
-  const payload = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>
-  }
-  const content = payload.choices?.[0]?.message?.content?.trim() ?? ''
-  return normalizeCoachingResponse(content)
 }

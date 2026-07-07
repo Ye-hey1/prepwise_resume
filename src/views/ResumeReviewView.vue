@@ -267,6 +267,11 @@ function openModule(moduleKey: ResumeReviewModuleKey) {
   resumeStore.requestScrollToModule(moduleKey)
   void router.push({ name: 'resume-editor' })
 }
+
+function handleDeleteReview(id: string) {
+  if (!window.confirm('确定删除该审查记录？')) return
+  reviewStore.deleteReview(id)
+}
 </script>
 
 <template>
@@ -380,6 +385,7 @@ function openModule(moduleKey: ResumeReviewModuleKey) {
           :history="reviewStore.history"
           :active-id="reviewStore.activeReviewId"
           @open="reviewStore.openHistoryItem"
+          @delete="handleDeleteReview"
         />
       </div>
     </div>

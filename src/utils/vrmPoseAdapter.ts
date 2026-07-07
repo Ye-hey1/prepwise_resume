@@ -61,7 +61,6 @@ export class VrmPoseAdapter {
       eyeLook.y * 0.3,
       LOOK_DISTANCE,
     )
-    target.applyQuaternion(vrm.scene.quaternion)
     target.add(origin)
     vrm.lookAt.lookAt(target)
     return true

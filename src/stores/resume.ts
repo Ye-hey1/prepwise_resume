@@ -401,7 +401,6 @@ export const useResumeStore = defineStore('resume', () => {
   const templateCustomizations = reactive<Record<string, TemplateCustomization>>({})
   const nextAutoSaveAt = ref<number | null>(null)
   const lastSavedAt = ref<number | null>(null)
-  const lastSaveMode = ref<'auto' | 'manual' | null>(null)
   const isSaving = ref(false)
   const importFeedbackText = ref('')
   const importFeedbackVisible = ref(false)
@@ -882,7 +881,6 @@ export const useResumeStore = defineStore('resume', () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
     nextAutoSaveAt.value = null
     lastSavedAt.value = Date.now()
-    lastSaveMode.value = mode
   }
 
   function loadFromStorage() {
@@ -1170,7 +1168,6 @@ export const useResumeStore = defineStore('resume', () => {
     autoSaveDelayMs: AUTO_SAVE_DELAY_MS,
     nextAutoSaveAt,
     lastSavedAt,
-    lastSaveMode,
     isSaving,
     pendingScrollToModule,
     requestScrollToModule,

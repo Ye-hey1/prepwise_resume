@@ -5,6 +5,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import { useResumeStore } from './resume'
+import { useApplicationTrackerStore } from './applicationTracker'
 import { dbPut, dbGet, dbDelete, isIndexedDBAvailable } from '@/utils/storage'
 import { toast } from '@/utils/toast'
 
@@ -127,6 +128,9 @@ export const useResumeVersionsStore = defineStore('resumeVersions', () => {
 
     // 删除关联快照
     snapshots.value = snapshots.value.filter(s => s.resumeId !== versionId)
+
+    // 清理投递追踪里悬空的 resumeVersionId 引用，避免孤儿数据
+    useApplicationTrackerStore().clearResumeVersionRef(versionId)
 
     // 如果删除的是当前活跃版本，切换到第一个
     if (activeVersionId.value === versionId && versions.value.length > 0) {

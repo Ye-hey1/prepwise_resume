@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useInterviewQuizStore, QUESTION_TAG_INFO, type QuestionTag, type QuestionDifficulty, type QuizSessionConfig } from '@/stores/interviewQuiz'
+import { useInterviewQuizStore, type DifficultyBucket, type QuizSessionConfig } from '@/stores/interviewQuiz'
 
 const emit = defineEmits<{
   'start': [config: QuizSessionConfig]
@@ -14,211 +14,201 @@ const config = ref<QuizSessionConfig>({
   showAnswer: true,
 })
 
-// 阶段选项
-const phaseOptions = [
-  { id: undefined, name: '全部阶段' },
-  { id: 'project', name: '项目与简历' },
-  { id: 'core', name: '核心基础' },
-  { id: 'framework', name: '框架应用' },
-  { id: 'system', name: '系统设计' },
-  { id: 'basic', name: '计算机基础' },
-  { id: 'distributed', name: '分布式' },
-  { id: 'jvm', name: 'JVM' },
-]
+const selectedCategories = ref<string[]>([])
+const selectedTags = ref<string[]>([])
+const selectedBuckets = ref<DifficultyBucket[]>([])
 
-// 难度选项
-const difficultyOptions: Array<{ id: QuestionDifficulty; name: string; color: string }> = [
+const difficultyBuckets: Array<{ id: DifficultyBucket; name: string; color: string }> = [
   { id: 'easy', name: '简单', color: '#10b981' },
   { id: 'medium', name: '中等', color: '#f59e0b' },
   { id: 'hard', name: '困难', color: '#ef4444' },
 ]
 
-// 标签选项
-const tagOptions = computed(() => {
-  return Object.entries(QUESTION_TAG_INFO).map(([id, info]) => ({
-    id: id as QuestionTag,
-    ...info,
-  }))
-})
-
-// 选中的标签
-const selectedTags = ref<QuestionTag[]>([])
-
-function toggleTag(tagId: QuestionTag) {
-  const index = selectedTags.value.indexOf(tagId)
-  if (index > -1) {
-    selectedTags.value.splice(index, 1)
-  } else {
-    selectedTags.value.push(tagId)
-  }
-  config.value.tags = selectedTags.value.length > 0 ? selectedTags.value : undefined
+function toggleCategory(category: string) {
+  const index = selectedCategories.value.indexOf(category)
+  if (index > -1) selectedCategories.value.splice(index, 1)
+  else selectedCategories.value.push(category)
+  config.value.categories = selectedCategories.value.length > 0 ? [...selectedCategories.value] : undefined
 }
 
-// 选中的难度
-const selectedDifficulties = ref<QuestionDifficulty[]>([])
-function toggleDifficulty(difficulty: QuestionDifficulty) {
-  const index = selectedDifficulties.value.indexOf(difficulty)
-  if (index > -1) {
-    selectedDifficulties.value.splice(index, 1)
-  } else {
-    selectedDifficulties.value.push(difficulty)
-  }
-  config.value.difficulty = selectedDifficulties.value.length > 0 ? selectedDifficulties.value : undefined
+function toggleTag(tag: string) {
+  const index = selectedTags.value.indexOf(tag)
+  if (index > -1) selectedTags.value.splice(index, 1)
+  else selectedTags.value.push(tag)
+  config.value.tags = selectedTags.value.length > 0 ? [...selectedTags.value] : undefined
 }
 
-// 预计题目数量
-const estimatedQuestions = computed(() => {
-  return quizStore.filterQuestions(config.value).length
-})
+function toggleBucket(bucket: DifficultyBucket) {
+  const index = selectedBuckets.value.indexOf(bucket)
+  if (index > -1) selectedBuckets.value.splice(index, 1)
+  else selectedBuckets.value.push(bucket)
+  config.value.difficultyBuckets = selectedBuckets.value.length > 0 ? [...selectedBuckets.value] : undefined
+}
 
-// 开始自测
+const estimatedQuestions = computed(() => quizStore.filterQuestions(config.value).length)
+
 function startQuiz() {
   emit('start', { ...config.value })
 }
 
-// 快速配置
-function quickSetup(type: 'all' | 'phase' | 'tag' | 'difficulty') {
-  switch (type) {
-    case 'all':
-      config.value = { questionCount: 20, randomOrder: true, showAnswer: true }
-      selectedTags.value = []
-      selectedDifficulties.value = []
-      break
-    case 'phase':
-      config.value = { phaseId: 'core', questionCount: 10, randomOrder: true, showAnswer: true }
-      selectedTags.value = []
-      selectedDifficulties.value = []
-      break
-    case 'tag':
-      config.value = { tags: ['java-core', 'mysql'], questionCount: 10, randomOrder: true, showAnswer: true }
-      selectedTags.value = ['java-core', 'mysql']
-      selectedDifficulties.value = []
-      break
-    case 'difficulty':
-      config.value = { difficulty: ['hard'], questionCount: 5, randomOrder: true, showAnswer: true }
-      selectedTags.value = []
-      selectedDifficulties.value = ['hard']
-      break
+function quickSetup(type: 'all' | 'category' | 'tag' | 'hard') {
+  selectedCategories.value = []
+  selectedTags.value = []
+  selectedBuckets.value = []
+  config.value = { questionCount: 10, randomOrder: true, showAnswer: true }
+
+  if (type === 'all') {
+    config.value.questionCount = 20
+  } else if (type === 'category' && quizStore.availableCategories[0]) {
+    selectedCategories.value = [quizStore.availableCategories[0]]
+    config.value.categories = [...selectedCategories.value]
+  } else if (type === 'tag' && quizStore.availableTags[0]) {
+    selectedTags.value = [quizStore.availableTags[0]]
+    config.value.tags = [...selectedTags.value]
+  } else if (type === 'hard') {
+    selectedBuckets.value = ['hard']
+    config.value.difficultyBuckets = ['hard']
+    config.value.questionCount = 5
   }
 }
+
+const hasQuestions = computed(() => quizStore.allQuestions.length > 0)
 </script>
 
 <template>
   <div class="quiz-setup-panel">
     <div class="panel-header">
-      <h3>📝 技术自测配置</h3>
-      <p class="header-desc">选择知识点范围和难度，开始模拟面试自测</p>
+      <h3>
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" /><line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" /><line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" /><line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" /></svg>
+        自测训练配置
+      </h3>
+      <p class="header-desc">从我的题库抽题，自评掌握度，结果回写题库弱项</p>
     </div>
 
-    <div class="quick-setup">
-      <span class="quick-label">快速开始：</span>
-      <button type="button" class="quick-btn" @click="quickSetup('all')">综合测试 (20题)</button>
-      <button type="button" class="quick-btn" @click="quickSetup('phase')">核心基础 (10题)</button>
-      <button type="button" class="quick-btn" @click="quickSetup('tag')">Java+MySQL (10题)</button>
-      <button type="button" class="quick-btn danger" @click="quickSetup('difficulty')">困难挑战 (5题)</button>
+    <div v-if="!hasQuestions" class="empty-hint">
+      题库还没有题目。先添加题目（AI 生成 / 真实面经 / 手动添加）后，再来进行自测训练。
     </div>
 
-    <div class="config-sections">
-      <!-- 阶段筛选 -->
-      <div class="config-section">
-        <label class="section-label">准备阶段</label>
-        <div class="option-chips">
-          <button
-            v-for="phase in phaseOptions"
-            :key="phase.id || 'all'"
-            type="button"
-            class="option-chip"
-            :class="{ active: config.phaseId === phase.id }"
-            @click="config.phaseId = phase.id"
-          >
-            {{ phase.name }}
-          </button>
+    <template v-else>
+      <div class="quick-setup">
+        <span class="quick-label">快速开始：</span>
+        <button type="button" class="quick-btn" @click="quickSetup('all')">综合测试 (20题)</button>
+        <button
+          v-if="quizStore.availableCategories.length"
+          type="button"
+          class="quick-btn"
+          @click="quickSetup('category')"
+        >首领域 (10题)</button>
+        <button
+          v-if="quizStore.availableTags.length"
+          type="button"
+          class="quick-btn"
+          @click="quickSetup('tag')"
+        >首标签 (10题)</button>
+        <button type="button" class="quick-btn danger" @click="quickSetup('hard')">困难挑战 (5题)</button>
+      </div>
+
+      <div class="config-sections">
+        <!-- 领域筛选 -->
+        <div v-if="quizStore.availableCategories.length" class="config-section">
+          <label class="section-label">领域</label>
+          <div class="option-chips">
+            <button
+              v-for="category in quizStore.availableCategories"
+              :key="category"
+              type="button"
+              class="option-chip"
+              :class="{ active: selectedCategories.includes(category) }"
+              @click="toggleCategory(category)"
+            >
+              {{ category }}
+            </button>
+          </div>
+        </div>
+
+        <!-- 标签筛选 -->
+        <div v-if="quizStore.availableTags.length" class="config-section">
+          <label class="section-label">标签</label>
+          <div class="tag-grid">
+            <button
+              v-for="tag in quizStore.availableTags"
+              :key="tag"
+              type="button"
+              class="tag-chip"
+              :class="{ active: selectedTags.includes(tag) }"
+              @click="toggleTag(tag)"
+            >
+              <span class="tag-dot" aria-hidden="true"></span>
+              <span class="tag-name">{{ tag }}</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 难度筛选 -->
+        <div class="config-section">
+          <label class="section-label">难度等级</label>
+          <div class="difficulty-chips">
+            <button
+              v-for="diff in difficultyBuckets"
+              :key="diff.id"
+              type="button"
+              class="difficulty-chip"
+              :class="{ active: selectedBuckets.includes(diff.id) }"
+              :style="{ '--diff-color': diff.color }"
+              @click="toggleBucket(diff.id)"
+            >
+              {{ diff.name }}
+            </button>
+          </div>
+        </div>
+
+        <!-- 数量设置 -->
+        <div class="config-section">
+          <label class="section-label">题目数量</label>
+          <div class="count-slider">
+            <input
+              v-model.number="config.questionCount"
+              type="range"
+              min="5"
+              max="50"
+              step="5"
+              class="slider"
+            />
+            <span class="count-value">{{ config.questionCount }} 题</span>
+          </div>
+        </div>
+
+        <!-- 其他选项 -->
+        <div class="config-section">
+          <label class="section-label">其他选项</label>
+          <div class="checkbox-group">
+            <label class="checkbox-item">
+              <input v-model="config.randomOrder" type="checkbox" />
+              <span>随机题目顺序</span>
+            </label>
+            <label class="checkbox-item">
+              <input v-model="config.showAnswer" type="checkbox" />
+              <span>自评后自动展开参考答案</span>
+            </label>
+          </div>
         </div>
       </div>
 
-      <!-- 标签筛选 -->
-      <div class="config-section">
-        <label class="section-label">知识标签</label>
-        <div class="tag-grid">
-          <button
-            v-for="tag in tagOptions"
-            :key="tag.id"
-            type="button"
-            class="tag-chip"
-            :class="{ active: selectedTags.includes(tag.id) }"
-            :style="{ '--tag-color': tag.color }"
-            @click="toggleTag(tag.id)"
-          >
-            <span class="tag-icon">{{ tag.icon }}</span>
-            <span class="tag-name">{{ tag.name }}</span>
-          </button>
+      <div class="panel-footer">
+        <div class="estimate-info">
+          <span class="estimate-label">符合条件：</span>
+          <span class="estimate-count">{{ estimatedQuestions }} 题</span>
         </div>
+        <button
+          type="button"
+          class="btn-start"
+          :disabled="estimatedQuestions === 0"
+          @click="startQuiz"
+        >
+          开始自测
+        </button>
       </div>
-
-      <!-- 难度筛选 -->
-      <div class="config-section">
-        <label class="section-label">难度等级</label>
-        <div class="difficulty-chips">
-          <button
-            v-for="diff in difficultyOptions"
-            :key="diff.id"
-            type="button"
-            class="difficulty-chip"
-            :class="{ active: selectedDifficulties.includes(diff.id) }"
-            :style="{ '--diff-color': diff.color }"
-            @click="toggleDifficulty(diff.id)"
-          >
-            {{ diff.name }}
-          </button>
-        </div>
-      </div>
-
-      <!-- 数量设置 -->
-      <div class="config-section">
-        <label class="section-label">题目数量</label>
-        <div class="count-slider">
-          <input
-            v-model.number="config.questionCount"
-            type="range"
-            min="5"
-            max="50"
-            step="5"
-            class="slider"
-          />
-          <span class="count-value">{{ config.questionCount }} 题</span>
-        </div>
-      </div>
-
-      <!-- 其他选项 -->
-      <div class="config-section">
-        <label class="section-label">其他选项</label>
-        <div class="checkbox-group">
-          <label class="checkbox-item">
-            <input v-model="config.randomOrder" type="checkbox" />
-            <span>随机题目顺序</span>
-          </label>
-          <label class="checkbox-item">
-            <input v-model="config.showAnswer" type="checkbox" />
-            <span>答题后显示解析</span>
-          </label>
-        </div>
-      </div>
-    </div>
-
-    <div class="panel-footer">
-      <div class="estimate-info">
-        <span class="estimate-label">预计题目：</span>
-        <span class="estimate-count">{{ estimatedQuestions }} 题</span>
-      </div>
-      <button
-        type="button"
-        class="btn-start"
-        :disabled="estimatedQuestions === 0"
-        @click="startQuiz"
-      >
-        开始自测
-      </button>
-    </div>
+    </template>
   </div>
 </template>
 
@@ -226,23 +216,49 @@ function quickSetup(type: 'all' | 'phase' | 'tag' | 'difficulty') {
 .quiz-setup-panel {
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  padding: 24px;
-  max-width: 700px;
-  margin: 0 auto;
+  gap: 22px;
+  padding: 8px 4px;
+  width: 100%;
 }
 
 .panel-header h3 {
   margin: 0 0 4px;
   font-size: 20px;
-  font-weight: 700;
+  font-weight: 800;
   color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.panel-header h3 svg {
+  width: 20px;
+  height: 20px;
+  color: var(--primary-600);
+}
+
+.panel-header h3 line {
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  fill: none;
 }
 
 .header-desc {
   margin: 0;
   color: var(--text-secondary);
   font-size: 14px;
+}
+
+.empty-hint {
+  padding: 32px 20px;
+  border: 1px dashed var(--border-color-strong);
+  border-radius: 12px;
+  background: var(--bg-card-muted);
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.7;
+  text-align: center;
 }
 
 .quick-setup {
@@ -257,24 +273,24 @@ function quickSetup(type: 'all' | 'phase' | 'tag' | 'difficulty') {
 
 .quick-label {
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text-secondary);
 }
 
 .quick-btn {
   padding: 8px 16px;
   border-radius: 8px;
-  border: 1px solid var(--accent-blue-500);
+  border: 1px solid var(--primary-500);
   background: transparent;
-  color: var(--accent-blue-500);
+  color: var(--primary-600);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color 0.16s ease, color 0.16s ease;
 }
 
 .quick-btn:hover {
-  background: var(--accent-blue-500);
+  background: var(--primary-600);
   color: #fff;
 }
 
@@ -302,7 +318,7 @@ function quickSetup(type: 'all' | 'phase' | 'tag' | 'difficulty') {
 
 .section-label {
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 800;
   color: var(--text-primary);
 }
 
@@ -321,18 +337,18 @@ function quickSetup(type: 'all' | 'phase' | 'tag' | 'difficulty') {
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color 0.16s ease, color 0.16s ease, border-color 0.16s ease;
 }
 
 .option-chip:hover {
-  border-color: var(--accent-blue-500);
-  color: var(--accent-blue-500);
+  border-color: var(--primary-500);
+  color: var(--primary-600);
 }
 
 .option-chip.active {
-  background: var(--accent-blue-500);
+  background: var(--primary-600);
   color: #fff;
-  border-color: var(--accent-blue-500);
+  border-color: var(--primary-600);
 }
 
 .tag-grid {
@@ -350,22 +366,30 @@ function quickSetup(type: 'all' | 'phase' | 'tag' | 'difficulty') {
   border: 1px solid var(--border-color);
   background: var(--bg-card);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
 }
 
 .tag-chip:hover {
-  border-color: var(--tag-color);
-  background: color-mix(in srgb, var(--tag-color) 10%, var(--bg-card));
+  border-color: var(--primary-500);
+  background: rgba(43, 123, 184, 0.05);
 }
 
 .tag-chip.active {
-  background: var(--tag-color);
+  background: var(--primary-600);
   color: #fff;
-  border-color: var(--tag-color);
+  border-color: var(--primary-600);
 }
 
-.tag-icon {
-  font-size: 16px;
+.tag-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--primary-500);
+  flex-shrink: 0;
+}
+
+.tag-chip.active .tag-dot {
+  background: #fff;
 }
 
 .tag-name {
@@ -386,7 +410,7 @@ function quickSetup(type: 'all' | 'phase' | 'tag' | 'difficulty') {
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
 }
 
 .difficulty-chip:hover {
@@ -420,7 +444,7 @@ function quickSetup(type: 'all' | 'phase' | 'tag' | 'difficulty') {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: var(--accent-blue-500);
+  background: var(--primary-600);
   cursor: pointer;
 }
 
@@ -428,8 +452,8 @@ function quickSetup(type: 'all' | 'phase' | 'tag' | 'difficulty') {
   min-width: 60px;
   text-align: right;
   font-size: 14px;
-  font-weight: 700;
-  color: var(--accent-blue-500);
+  font-weight: 800;
+  color: var(--primary-600);
 }
 
 .checkbox-group {
@@ -450,7 +474,7 @@ function quickSetup(type: 'all' | 'phase' | 'tag' | 'difficulty') {
 .checkbox-item input[type="checkbox"] {
   width: 18px;
   height: 18px;
-  accent-color: var(--accent-blue-500);
+  accent-color: var(--primary-600);
 }
 
 .panel-footer {
@@ -473,25 +497,24 @@ function quickSetup(type: 'all' | 'phase' | 'tag' | 'difficulty') {
 }
 
 .estimate-count {
-  font-weight: 700;
-  color: var(--accent-blue-500);
+  font-weight: 800;
+  color: var(--primary-600);
 }
 
 .btn-start {
   padding: 12px 32px;
   border-radius: 10px;
   border: none;
-  background: var(--accent-blue-500);
+  background: var(--primary-600);
   color: #fff;
   font-size: 15px;
-  font-weight: 700;
+  font-weight: 800;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color 0.16s ease;
 }
 
 .btn-start:hover:not(:disabled) {
-  background: var(--accent-blue-600);
-  transform: translateY(-1px);
+  background: var(--primary-700);
 }
 
 .btn-start:disabled {

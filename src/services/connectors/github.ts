@@ -4,15 +4,12 @@
  */
 
 import type { Connector, SearchResult, RawPost } from './base'
+import { fetchTextWithCache } from './base'
 
 interface GithubConfig {
   repoRawUrls: string[]
   relevanceHints: string[]
 }
-
-// 简单的内存缓存
-const cache = new Map<string, { data: string; timestamp: number }>()
-const CACHE_TTL = 30 * 60 * 1000 // 30分钟
 
 export class GithubConnector implements Connector {
   name = 'github'
@@ -25,12 +22,12 @@ export class GithubConnector implements Connector {
   async search(queries: string[]): Promise<SearchResult> {
     try {
       const posts: RawPost[] = []
-      
+
       for (const repoUrl of this.config.repoRawUrls) {
         try {
-          const content = await this.fetchWithCache(repoUrl)
+          const content = await fetchTextWithCache(repoUrl)
           const relevantContent = this.extractRelevantContent(content, queries)
-          
+
           if (relevantContent) {
             posts.push({
               source: 'github',
@@ -59,63 +56,23 @@ export class GithubConnector implements Connector {
     }
   }
 
-  private async fetchWithCache(url: string): Promise<string> {
-    // 检查缓存
-    const cached = cache.get(url)
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-      return cached.data
-    }
-
-    // 带重试的请求
-    const content = await this.fetchWithRetry(url)
-    
-    // 缓存结果
-    cache.set(url, { data: content, timestamp: Date.now() })
-    
-    return content
-  }
-
-  private async fetchWithRetry(url: string, maxRetries = 3): Promise<string> {
-    for (let i = 0; i < maxRetries; i++) {
-      try {
-        const response = await fetch(url)
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-        }
-        return await response.text()
-      } catch (err) {
-        if (i === maxRetries - 1) throw err
-        // 指数退避
-        await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)))
-      }
-    }
-    throw new Error('Max retries exceeded')
-  }
-
   private extractRelevantContent(content: string, queries: string[]): string | null {
     const lines = content.split('\n')
     const relevantLines: string[] = []
-    
+
     for (const line of lines) {
       const lowerLine = line.toLowerCase()
-      const isRelevant = this.config.relevanceHints.some(hint => 
+      const isRelevant = this.config.relevanceHints.some(hint =>
         lowerLine.includes(hint.toLowerCase())
-      ) || queries.some(query => 
+      ) || queries.some(query =>
         lowerLine.includes(query.toLowerCase())
       )
-      
+
       if (isRelevant && line.trim().length > 10) {
         relevantLines.push(line.trim())
       }
     }
-    
-    return relevantLines.length > 0 ? relevantLines.join('\n') : null
-  }
 
-  /**
-   * 清除缓存
-   */
-  static clearCache(): void {
-    cache.clear()
+    return relevantLines.length > 0 ? relevantLines.join('\n') : null
   }
 }

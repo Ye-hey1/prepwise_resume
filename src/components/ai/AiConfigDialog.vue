@@ -18,6 +18,7 @@ import {
   type SearchProviderConfig,
   type SearchProviderId,
 } from '@/stores/aiConfig'
+import { testSearchProviderConnection } from '@/services/searchService'
 
 const store = useAiConfigStore()
 
@@ -1032,7 +1033,6 @@ async function handleTestSearchProvider(providerId: SearchProviderId) {
   searchTesting[providerId] = true
   searchTestResult[providerId] = null
   try {
-    const { testSearchProviderConnection } = await import('@/services/searchService')
     await testSearchProviderConnection({
       id: provider.id,
       enabled: provider.enabled,

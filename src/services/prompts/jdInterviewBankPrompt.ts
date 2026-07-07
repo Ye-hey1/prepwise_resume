@@ -27,13 +27,12 @@ export const JD_INTERVIEW_INSIGHT_ONLY_SYSTEM_PROMPT = `你是一位资深面试
 ${JD_JSON_STRICT_RULES}
 
 ## 输出要求
-你必须基于 STAR 原则提供口语化的参考答案，且符合“反捏造”红线：如果候选人缺少相关经验，应提供“扬长避短”的转接话术。
+此步骤只生成题目解析，不生成参考答案。answerStructure 只写答题思路摘要，不要展开成完整回答。
 
 ## 输出 JSON Schema
 {
   "context": "考察意图",
   "answerStructure": "建议答题框架",
-  "sampleAnswer": "专家级参考答案（300字以上，含真实项目结合点）",
   "keyPoints": ["核心要点1", "核心要点2"],
   "pitfalls": ["避坑指南1", "避坑指南2"],
   "followUpHints": ["后续追问建议1", "后续追问建议2"]

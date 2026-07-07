@@ -2,8 +2,6 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import {
-  APPLICATION_PRIORITY_OPTIONS,
-  APPLICATION_STATUS_OPTIONS,
   type ApplicationPriority,
   type ApplicationStatus,
   useApplicationTrackerStore,
@@ -11,14 +9,13 @@ import {
 import { useJdAnalysisStore, type JdPrepHistoryItem } from '@/stores/jdAnalysis'
 import { SKILL_DIMENSIONS, type SkillDimension, useLearningProgressStore } from '@/stores/learningProgress'
 import { useQuestionBankStore, type SavedQuestion } from '@/stores/questionBank'
-import type { InterviewSessionRecord } from '@/components/ai/interview/types'
 import type { InterviewQuestion } from '@/services/jd/interviewBank'
+import { isStaleFutureDateRiskText } from '@/utils/currentDateContext'
 
 defineOptions({ name: 'TrainingCenterView' })
 
 const SELECTED_JOB_STORAGE_KEY = 'prepwise-training-center-selected-jd'
 const DRILL_SEED_STORAGE_KEY = 'prepwise_question_bank_drill_seed'
-const INTERVIEW_HISTORY_STORAGE_KEY = 'prepwise_interview_history'
 
 type TrainingTone = 'ready' | 'active' | 'warning' | 'pending'
 
@@ -62,42 +59,8 @@ function readSelectedJobId(): string {
   }
 }
 
-function formatDate(value: string | null | undefined): string {
-  if (!value) return '暂无'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '暂无'
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date)
-}
-
-function getStatusLabel(status: ApplicationStatus): string {
-  return APPLICATION_STATUS_OPTIONS.find((item) => item.key === status)?.label ?? '关注中'
-}
-
-function getPriorityLabel(priority: ApplicationPriority): string {
-  return APPLICATION_PRIORITY_OPTIONS.find((item) => item.key === priority)?.label ?? '中'
-}
-
 function getSkillLabel(key: SkillDimension): string {
   return SKILL_DIMENSIONS.find((item) => item.key === key)?.label ?? key
-}
-
-function loadInterviewRecords(): InterviewSessionRecord[] {
-  try {
-    const raw = localStorage.getItem(INTERVIEW_HISTORY_STORAGE_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return []
-    return parsed
-      .filter((item): item is InterviewSessionRecord => Boolean(item && typeof item === 'object' && typeof item.id === 'string'))
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-  } catch {
-    return []
-  }
 }
 
 function calculateReadiness(item: JdPrepHistoryItem): number {
@@ -113,7 +76,7 @@ function calculateReadiness(item: JdPrepHistoryItem): number {
 
 function calculateRiskCount(item: JdPrepHistoryItem): number {
   return (item.matchResult?.gaps.length ?? 0)
-    + (item.prepInsight?.highRiskFollowUps.length ?? 0)
+    + getEffectiveHighRiskFollowUps(item).length
     + (item.lastWeaknesses?.length ?? 0)
 }
 
@@ -126,6 +89,18 @@ function parseDifficulty(value: string | undefined): number {
 
 function normalizeQuestionContent(value: string): string {
   return value.replace(/\s+/g, ' ').trim()
+}
+
+type HighRiskFollowUp = NonNullable<JdPrepHistoryItem['prepInsight']>['highRiskFollowUps'][number]
+
+function getEffectiveHighRiskFollowUps(item: JdPrepHistoryItem | null): HighRiskFollowUp[] {
+  return (item?.prepInsight?.highRiskFollowUps ?? []).filter(risk =>
+    !isStaleFutureDateRiskText([
+      risk.question,
+      risk.riskReason,
+      risk.suggestion,
+    ].join('\n')),
+  )
 }
 
 function interviewQuestionToSavedQuestion(item: JdPrepHistoryItem, question: InterviewQuestion, index: number): SavedQuestion {
@@ -163,7 +138,7 @@ function interviewQuestionToSavedQuestion(item: JdPrepHistoryItem, question: Int
 function buildDrillSeeds(item: JdPrepHistoryItem | null): SavedQuestion[] {
   if (!item) return []
 
-  const highRiskQuestions: SavedQuestion[] = (item.prepInsight?.highRiskFollowUps ?? []).map((risk, index) => ({
+  const highRiskQuestions: SavedQuestion[] = getEffectiveHighRiskFollowUps(item).map((risk, index) => ({
     content: normalizeQuestionContent(risk.question),
     category: '岗位高风险追问',
     tags: ['高风险', 'JD分析', risk.moduleKey, item.company, item.position].filter((tag): tag is string => Boolean(tag?.trim())),
@@ -213,7 +188,13 @@ function buildDrillSeeds(item: JdPrepHistoryItem | null): SavedQuestion[] {
   return seeds
     .filter((question) => {
       const key = question.content.trim()
-      if (!key || seen.has(key)) return false
+      if (!key || seen.has(key) || isStaleFutureDateRiskText([
+        question.content,
+        question.focus_area ?? '',
+        question.intent ?? '',
+        question.reference_answer ?? '',
+        ...(question.follow_up_chain ?? []),
+      ].join('\n'))) return false
       seen.add(key)
       return true
     })
@@ -257,9 +238,6 @@ function openJd(item: JdPrepHistoryItem) {
   jdStore.openHistoryItem(item.id)
 }
 
-const interviewRecords = computed(() => loadInterviewRecords())
-const latestInterview = computed(() => interviewRecords.value[0] ?? null)
-
 const statusRank: Record<ApplicationStatus, number> = {
   interviewing: 0,
   ready: 1,
@@ -275,42 +253,84 @@ const priorityRank: Record<ApplicationPriority, number> = {
   low: 2,
 }
 
-const trainingJobs = computed<TrainingJobRow[]>(() =>
+function normalizeJobKeyText(value: string): string {
+  return value.replace(/\s+/g, '').toLowerCase()
+}
+
+function buildTrainingJobRow(item: JdPrepHistoryItem): TrainingJobRow {
+  const tracker = trackerStore.getTrackerItem(item.id)
+  return {
+    jd: item,
+    title: item.position || item.jdData?.basicInfo.jobTitle || '未命名岗位',
+    company: item.company || item.jdData?.basicInfo.company || '未填写公司',
+    status: tracker.status,
+    priority: tracker.priority,
+    readiness: calculateReadiness(item),
+    matchScore: item.matchResult?.score.total ?? null,
+    riskCount: calculateRiskCount(item),
+    questionCount: item.interviewQuestions.length,
+    practiceCount: item.practiceCount ?? item.linkedInterviewRecordIds?.length ?? 0,
+    updatedAt: item.updatedAt,
+  }
+}
+
+function compareTrainingJobRows(a: TrainingJobRow, b: TrainingJobRow): number {
+  return statusRank[a.status] - statusRank[b.status]
+    || priorityRank[a.priority] - priorityRank[b.priority]
+    || b.riskCount - a.riskCount
+    || b.readiness - a.readiness
+    || b.questionCount - a.questionCount
+    || new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+}
+
+function trainingJobIdentityKey(item: TrainingJobRow): string {
+  const company = item.company === '未填写公司' ? '' : normalizeJobKeyText(item.company)
+  const title = item.title === '未命名岗位' ? '' : normalizeJobKeyText(item.title)
+  if (!company && !title) return `jd:${item.jd.id}`
+  return `${company || 'unknown-company'}::${title || 'unknown-title'}`
+}
+
+function dedupeTrainingJobRows(items: TrainingJobRow[]): TrainingJobRow[] {
+  const seen = new Set<string>()
+  return items.filter((item) => {
+    const key = trainingJobIdentityKey(item)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+const allTrainingJobRows = computed<TrainingJobRow[]>(() =>
   jdStore.history
-    .map((item) => {
-      const tracker = trackerStore.getTrackerItem(item.id)
-      return {
-        jd: item,
-        title: item.position || '未命名岗位',
-        company: item.company || '未填写公司',
-        status: tracker.status,
-        priority: tracker.priority,
-        readiness: calculateReadiness(item),
-        matchScore: item.matchResult?.score.total ?? null,
-        riskCount: calculateRiskCount(item),
-        questionCount: item.interviewQuestions.length,
-        practiceCount: item.practiceCount ?? item.linkedInterviewRecordIds?.length ?? 0,
-        updatedAt: item.updatedAt,
-      }
-    })
-    .sort((a, b) =>
-      statusRank[a.status] - statusRank[b.status]
-      || priorityRank[a.priority] - priorityRank[b.priority]
-      || b.riskCount - a.riskCount
-      || new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-    ),
+    .map(buildTrainingJobRow)
+    .sort(compareTrainingJobRows),
 )
 
+const trainingJobs = computed<TrainingJobRow[]>(() => dedupeTrainingJobRows(allTrainingJobRows.value))
+
+const hiddenDuplicateJobCount = computed(() => allTrainingJobRows.value.length - trainingJobs.value.length)
+
 const effectiveSelectedJdId = computed({
-  get: () => selectedJdId.value || trainingJobs.value[0]?.jd.id || '',
+  get: () => selectedJob.value?.jd.id || '',
   set: (value: string) => {
     selectedJdId.value = value
   },
 })
 
-const selectedJob = computed(() =>
-  trainingJobs.value.find((item) => item.jd.id === effectiveSelectedJdId.value) ?? trainingJobs.value[0] ?? null,
-)
+const selectedJob = computed(() => {
+  if (!trainingJobs.value.length) return null
+  if (selectedJdId.value) {
+    const exactVisible = trainingJobs.value.find((item) => item.jd.id === selectedJdId.value)
+    if (exactVisible) return exactVisible
+
+    const hiddenDuplicate = allTrainingJobRows.value.find((item) => item.jd.id === selectedJdId.value)
+    if (hiddenDuplicate) {
+      const duplicateKey = trainingJobIdentityKey(hiddenDuplicate)
+      return trainingJobs.value.find((item) => trainingJobIdentityKey(item) === duplicateKey) ?? trainingJobs.value[0] ?? null
+    }
+  }
+  return trainingJobs.value[0] ?? null
+})
 
 const selectedDrillSeeds = computed(() => buildDrillSeeds(selectedJob.value?.jd ?? null))
 
@@ -325,25 +345,21 @@ const weakDimensionLabels = computed(() =>
   learningStore.weakDimensions.map((key) => getSkillLabel(key)).slice(0, 4),
 )
 
-const averageLearningScore = computed(() => {
-  const scores = Object.values(learningStore.currentScores).filter((score) => score > 0)
-  if (!scores.length) return 0
-  return Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length)
-})
-
 const activeJobCount = computed(() =>
   trainingJobs.value.filter((item) => !['offer', 'rejected'].includes(item.status)).length,
 )
 
 const highRiskQuestionCount = computed(() =>
-  jdStore.history.reduce((sum, item) => sum + (item.prepInsight?.highRiskFollowUps.length ?? 0), 0),
+  trainingJobs.value.reduce((sum, item) => sum + getEffectiveHighRiskFollowUps(item.jd).length, 0),
 )
 
 const trainingStats = computed(() => [
   {
     label: '训练岗位',
     value: `${activeJobCount.value}`,
-    note: `共 ${trainingJobs.value.length} 个 JD 记录`,
+    note: hiddenDuplicateJobCount.value > 0
+      ? `共 ${trainingJobs.value.length} 个岗位，已合并 ${hiddenDuplicateJobCount.value} 条重复记录`
+      : `共 ${trainingJobs.value.length} 个岗位`,
   },
   {
     label: '高风险追问',
@@ -354,11 +370,6 @@ const trainingStats = computed(() => [
     label: '待练题目',
     value: `${weakQuestionSeeds.value.length}`,
     note: questionStore.stats.total ? `题库共 ${questionStore.stats.total} 道` : '题库待沉淀',
-  },
-  {
-    label: '能力均分',
-    value: averageLearningScore.value ? `${averageLearningScore.value}` : '--',
-    note: weakDimensionLabels.value.length ? weakDimensionLabels.value.join(' / ') : '等待面试评分',
   },
 ])
 
@@ -383,7 +394,7 @@ const planBlocks = computed<PlanBlock[]>(() => {
 
   const focusAreas = item.prepInsight?.focusAreas ?? []
   const priorities = item.prepInsight?.prepPriorities ?? []
-  const highRisk = item.prepInsight?.highRiskFollowUps ?? []
+  const highRisk = getEffectiveHighRiskFollowUps(item)
   const stories = item.prepInsight?.recommendedStories ?? []
   const groups = item.prepInsight?.likelyQuestionGroups ?? []
   const weaknesses = item.lastWeaknesses ?? []
@@ -432,55 +443,6 @@ const planBlocks = computed<PlanBlock[]>(() => {
   ]
 })
 
-const guideTracks = computed(() => {
-  const item = selectedJob.value?.jd
-  const gaps = item?.matchResult?.gaps ?? []
-  const mustHave = item?.jdData?.requirements.mustHave.map((entry) => entry.text) ?? []
-  const duties = item?.jdData?.requirements.jobDuties ?? []
-  const likelyGroups = item?.prepInsight?.likelyQuestionGroups ?? []
-
-  return [
-    {
-      title: '基础知识',
-      desc: '把硬性要求拆成可复述的概念、原理和使用边界。',
-      topics: [...selectedTechStack.value, ...mustHave].slice(0, 5),
-    },
-    {
-      title: '项目实战',
-      desc: '把职责要求映射到简历项目，准备场景、动作和结果。',
-      topics: [
-        ...(item?.prepInsight?.recommendedStories.map((story) => story.title) ?? []),
-        ...duties,
-      ].slice(0, 5),
-    },
-    {
-      title: '薄弱补齐',
-      desc: '优先补匹配缺口和最近面试暴露的问题。',
-      topics: [
-        ...gaps,
-        ...(item?.lastWeaknesses ?? []),
-        ...weakDimensionLabels.value.map((label) => `${label}表达`),
-      ].slice(0, 5),
-    },
-    {
-      title: '高频题组',
-      desc: '按题组练习，保证每类问题都有稳定答题框架。',
-      topics: likelyGroups.map((group) => group.title).slice(0, 5),
-    },
-  ]
-})
-
-const recentReviews = computed(() =>
-  interviewRecords.value.slice(0, 4).map((item) => ({
-    id: item.id,
-    title: item.targetRole || item.companyOrRoleSummary || '模拟面试',
-    score: item.totalScore,
-    passed: item.passed,
-    date: item.date,
-    weakness: item.reviewData?.weaknesses?.[0] ?? item.summary,
-  })),
-)
-
 watch(selectedJdId, (value) => {
   try {
     if (value) localStorage.setItem(SELECTED_JOB_STORAGE_KEY, value)
@@ -495,237 +457,164 @@ onMounted(() => {
 </script>
 
 <template>
-  <section class="training-center">
-    <div class="training-scroll">
-      <div class="training-shell">
-        <header class="training-header">
-          <div>
-            <span class="kicker">训练中心</span>
-            <h1>把岗位要求拆成知识、项目追问和专项练习</h1>
-            <p>训练计划读取本地 JD、投递状态、题库与面试复盘记录，用来承接投递前后的备面闭环。</p>
+  <section class="training-center product-page">
+    <div class="training-scroll product-scroll">
+      <div class="training-shell product-shell">
+        <header class="tc-header product-header">
+          <div class="tc-title product-header-title">
+            <h1>训练中心</h1>
+            <p>基于目标 JD 的备面训练，把岗位要求拆成可练的题包</p>
           </div>
-
-          <div class="header-actions">
-            <RouterLink class="secondary-action" :to="{ name: 'question-bank' }">题库</RouterLink>
-            <button class="primary-action" type="button" :disabled="!selectedDrillSeeds.length" @click="startSelectedJobPractice">
-              开始专项训练
-            </button>
-          </div>
+          <button
+            class="tc-primary-btn"
+            type="button"
+            :disabled="!selectedDrillSeeds.length"
+            @click="startSelectedJobPractice"
+          >
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></svg>
+            开始专项训练
+          </button>
         </header>
 
-        <div class="stats-grid">
-          <article v-for="item in trainingStats" :key="item.label" class="stat-card">
-            <span>{{ item.label }}</span>
-            <strong>{{ item.value }}</strong>
-            <p>{{ item.note }}</p>
+        <div class="tc-stats">
+          <article v-for="item in trainingStats" :key="item.label" class="tc-stat">
+            <span class="tc-stat-label">{{ item.label }}</span>
+            <strong class="tc-stat-value">{{ item.value }}</strong>
+            <span class="tc-stat-note">{{ item.note }}</span>
           </article>
         </div>
 
-        <div class="training-layout">
-          <main class="training-main">
-            <section class="section-card">
-              <div class="section-head toolbar-head">
-                <div>
-                  <span class="panel-label">岗位训练队列</span>
-                  <h2>按投递阶段和风险排序</h2>
-                </div>
-
-                <select v-if="trainingJobs.length" v-model="effectiveSelectedJdId" class="job-select">
+        <div class="tc-layout">
+          <main class="tc-main">
+            <!-- 岗位训练队列 -->
+            <section class="tc-section">
+              <div class="tc-section-head">
+                <h2>岗位训练队列</h2>
+                <select v-if="trainingJobs.length" v-model="effectiveSelectedJdId" class="tc-select">
                   <option v-for="item in trainingJobs" :key="item.jd.id" :value="item.jd.id">
                     {{ item.company }} · {{ item.title }}
                   </option>
                 </select>
               </div>
 
-              <div v-if="trainingJobs.length" class="job-list">
+              <div v-if="trainingJobs.length" class="tc-job-list">
                 <article
                   v-for="item in trainingJobs"
                   :key="item.jd.id"
-                  class="job-row"
-                  :class="[
-                    { active: item.jd.id === selectedJob?.jd.id },
-                    item.riskCount >= 3 ? 'job-row--high-risk' : item.riskCount > 0 ? 'job-row--medium-risk' : 'job-row--stable',
-                  ]"
+                  class="tc-job-row"
+                  :class="{ active: item.jd.id === selectedJob?.jd.id }"
                   role="button"
                   tabindex="0"
                   @click="effectiveSelectedJdId = item.jd.id"
                   @keydown.enter.prevent="effectiveSelectedJdId = item.jd.id"
-                  @keydown.space.prevent="effectiveSelectedJdId = item.jd.id"
                 >
-                  <div class="job-main">
-                    <div>
-                      <strong>{{ item.title }}</strong>
-                      <span>{{ item.company }}</span>
-                    </div>
-                    <div class="tag-row">
-                      <span :class="`tag-pill tag-pill--${item.status}`">{{ getStatusLabel(item.status) }}</span>
-                      <span :class="`tag-pill priority-pill--${item.priority}`">优先级 {{ getPriorityLabel(item.priority) }}</span>
-                      <span
-                        :class="[
-                          'tag-pill',
-                          item.riskCount >= 3 ? 'tag-pill--risk-high' : item.riskCount > 0 ? 'tag-pill--risk-medium' : 'tag-pill--risk-low',
-                        ]"
-                      >
-                        {{ item.riskCount }} 个风险
-                      </span>
-                    </div>
+                  <div class="tc-job-main">
+                    <strong>{{ item.title }}</strong>
+                    <span>{{ item.company }}</span>
                   </div>
-
-                  <dl class="job-metrics">
-                    <div>
-                      <dt>匹配</dt>
-                      <dd>{{ item.matchScore ?? '--' }}</dd>
-                    </div>
-                    <div>
-                      <dt>准备</dt>
-                      <dd>{{ item.readiness }}%</dd>
-                    </div>
-                    <div>
-                      <dt>题目</dt>
-                      <dd>{{ item.questionCount }}</dd>
-                    </div>
-                    <div>
-                      <dt>训练</dt>
-                      <dd>{{ item.practiceCount }}</dd>
-                    </div>
-                  </dl>
-
-                  <div class="job-actions">
-                    <RouterLink :to="{ name: 'jd-analysis' }" @click.stop="openJd(item.jd)">JD</RouterLink>
-                    <RouterLink :to="{ name: 'application-tracker' }" @click.stop>投递</RouterLink>
+                  <div class="tc-job-meta">
+                    <span class="tc-chip" :class="{ 'tc-chip--risk': item.riskCount > 0 }">{{ item.riskCount }} 风险</span>
+                    <span class="tc-metric">匹配 {{ item.matchScore ?? '--' }}</span>
+                    <span class="tc-metric">准备 {{ item.readiness }}%</span>
                   </div>
+                  <RouterLink class="tc-job-link" :to="{ name: 'jd-analysis' }" @click.stop="openJd(item.jd)">JD</RouterLink>
                 </article>
               </div>
 
-              <div v-else class="empty-block">
-                暂无岗位训练队列。先完成一次 JD 分析，训练中心会自动把岗位、追问和题目沉淀到这里。
-              </div>
+              <div v-else class="tc-empty">暂无岗位。先到 JD 分析保存一个目标岗位，训练中心会自动承接备面训练。</div>
             </section>
 
-            <section class="section-card">
-              <div class="section-head">
-                <div>
-                  <span class="panel-label">今日训练计划</span>
-                  <h2>{{ selectedJob ? `${selectedJob.company} · ${selectedJob.title}` : '等待目标岗位' }}</h2>
-                </div>
-                <button class="text-action" type="button" :disabled="!selectedDrillSeeds.length || savingSeeds" @click="saveSelectedSeedsToBank">
+            <!-- 训练计划 -->
+            <section class="tc-section">
+              <div class="tc-section-head">
+                <h2>
+                  训练计划
+                  <template v-if="selectedJob"><span class="tc-section-sub"> · {{ selectedJob.company }} {{ selectedJob.title }}</span></template>
+                </h2>
+                <button
+                  class="tc-text-btn"
+                  type="button"
+                  :disabled="!selectedDrillSeeds.length || savingSeeds"
+                  @click="saveSelectedSeedsToBank"
+                >
                   {{ savingSeeds ? '沉淀中' : '沉淀到题库' }}
                 </button>
               </div>
 
-              <div class="plan-grid">
-                <article v-for="block in planBlocks" :key="block.key" class="plan-card" :class="`plan-card--${block.tone}`">
-                  <div class="plan-card-head">
+              <div class="tc-plan-grid">
+                <article
+                  v-for="block in planBlocks"
+                  :key="block.key"
+                  class="tc-plan-card"
+                  :class="`tc-plan--${block.tone}`"
+                >
+                  <div class="tc-plan-head">
                     <strong>{{ block.title }}</strong>
                     <span>{{ block.metric }}</span>
                   </div>
                   <p>{{ block.desc }}</p>
                   <ul v-if="block.items.length">
-                    <li v-for="item in block.items" :key="item">{{ item }}</li>
+                    <li v-for="it in block.items" :key="it">{{ it }}</li>
                   </ul>
-                  <div v-else class="mini-empty">暂无数据</div>
-                </article>
-              </div>
-            </section>
-
-            <section class="section-card">
-              <div class="section-head">
-                <div>
-                  <span class="panel-label">面试知识路径</span>
-                  <h2>按基础、项目、薄弱点和题组推进</h2>
-                </div>
-              </div>
-
-              <div class="guide-grid">
-                <article v-for="track in guideTracks" :key="track.title" class="guide-card">
-                  <strong>{{ track.title }}</strong>
-                  <p>{{ track.desc }}</p>
-                  <div v-if="track.topics.length" class="topic-list">
-                    <span v-for="topic in track.topics" :key="topic">{{ topic }}</span>
-                  </div>
-                  <div v-else class="mini-empty">等待 JD 画像</div>
+                  <p v-else class="tc-plan-empty">暂无数据</p>
                 </article>
               </div>
             </section>
           </main>
 
-          <aside class="training-side">
-            <section class="side-card">
-              <div class="section-head compact">
-                <div>
-                  <span class="panel-label">专项题包</span>
-                  <h2>{{ selectedDrillSeeds.length }} 道题</h2>
-                </div>
+          <aside class="tc-aside">
+            <!-- 专项题包 -->
+            <section class="tc-side-card">
+              <div class="tc-side-head">
+                <h3>专项题包</h3>
+                <span class="tc-side-count">{{ selectedDrillSeeds.length }} 道</span>
               </div>
-
-              <div v-if="selectedDrillSeeds.length" class="seed-list">
-                <article v-for="question in selectedDrillSeeds.slice(0, 5)" :key="question.content" class="seed-item">
+              <div v-if="selectedDrillSeeds.length" class="tc-seed-list">
+                <article
+                  v-for="question in selectedDrillSeeds.slice(0, 5)"
+                  :key="question.content"
+                  class="tc-seed-item"
+                >
                   <strong>{{ question.content }}</strong>
                   <span>{{ question.category }}</span>
                 </article>
               </div>
-              <p v-else class="side-note">当前岗位还没有可训练题目。</p>
-
-              <button class="wide-action" type="button" :disabled="!selectedDrillSeeds.length" @click="startSelectedJobPractice">
+              <p v-else class="tc-side-note">当前岗位还没有可训练题目。</p>
+              <button
+                class="tc-wide-btn"
+                type="button"
+                :disabled="!selectedDrillSeeds.length"
+                @click="startSelectedJobPractice"
+              >
                 用这组题训练
               </button>
             </section>
 
-            <section class="side-card">
-              <div class="section-head compact">
-                <div>
-                  <span class="panel-label">题库弱项</span>
-                  <h2>{{ weakQuestionSeeds.length }} 道待练</h2>
-                </div>
-                <RouterLink :to="{ name: 'question-bank' }">查看</RouterLink>
+            <!-- 题库弱项 -->
+            <section class="tc-side-card">
+              <div class="tc-side-head">
+                <h3>题库弱项</h3>
+                <RouterLink class="tc-side-link" :to="{ name: 'question-bank' }">查看</RouterLink>
               </div>
-
-              <div v-if="weakQuestionSeeds.length" class="seed-list">
-                <article v-for="question in weakQuestionSeeds.slice(0, 4)" :key="question.id ?? question.content" class="seed-item">
+              <div v-if="weakQuestionSeeds.length" class="tc-seed-list">
+                <article
+                  v-for="question in weakQuestionSeeds.slice(0, 4)"
+                  :key="question.id ?? question.content"
+                  class="tc-seed-item"
+                >
                   <strong>{{ question.content }}</strong>
-                  <span>{{ question.category || '未分类' }} · 掌握度 {{ question.mastery_level ?? 0 }}</span>
+                  <span>{{ question.category || '未分类' }} · 掌握 {{ question.mastery_level ?? 0 }}</span>
                 </article>
               </div>
-              <p v-else class="side-note">题库暂无弱项记录。</p>
-
-              <button class="wide-action ghost" type="button" :disabled="!weakQuestionSeeds.length" @click="startWeakQuestionPractice">
+              <p v-else class="tc-side-note">题库暂无弱项记录。</p>
+              <button
+                class="tc-wide-btn ghost"
+                type="button"
+                :disabled="!weakQuestionSeeds.length"
+                @click="startWeakQuestionPractice"
+              >
                 练题库弱项
               </button>
-            </section>
-
-            <section class="side-card">
-              <div class="section-head compact">
-                <div>
-                  <span class="panel-label">能力短板</span>
-                  <h2>{{ averageLearningScore || '--' }} 分</h2>
-                </div>
-              </div>
-
-              <div v-if="weakDimensionLabels.length" class="dimension-list">
-                <span v-for="item in weakDimensionLabels" :key="item">{{ item }}</span>
-              </div>
-              <p v-else class="side-note">完成带评分的模拟面试后显示薄弱维度。</p>
-            </section>
-
-            <section class="side-card">
-              <div class="section-head compact">
-                <div>
-                  <span class="panel-label">最近复盘</span>
-                  <h2>{{ latestInterview?.totalScore ?? '--' }}</h2>
-                </div>
-                <RouterLink :to="{ name: 'ai-interviewer' }">面试</RouterLink>
-              </div>
-
-              <div v-if="recentReviews.length" class="review-list">
-                <article v-for="item in recentReviews" :key="item.id" class="review-item">
-                  <div>
-                    <strong>{{ item.title }}</strong>
-                    <span>{{ item.weakness || '暂无复盘摘要' }}</span>
-                  </div>
-                  <time>{{ formatDate(item.date) }}</time>
-                </article>
-              </div>
-              <p v-else class="side-note">暂无面试复盘记录。</p>
             </section>
           </aside>
         </div>
@@ -736,668 +625,510 @@ onMounted(() => {
 
 <style scoped>
 .training-center {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  height: 100%;
-  background: var(--bg-app);
 }
 
 .training-scroll {
-  flex: 1;
-  min-width: 0;
-  overflow: auto;
-  padding: 20px;
 }
 
 .training-shell {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  min-width: 0;
+  gap: 18px;
+  max-width: 1200px;
 }
 
-.training-header,
-.stat-card,
-.section-card,
-.side-card {
+/* ── header ── */
+.tc-header {
+}
+
+.tc-title h1 {
+}
+
+.tc-title p {
+}
+
+.tc-primary-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 9px;
+  background: var(--primary-600);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background-color 0.16s ease;
+}
+
+.tc-primary-btn:hover:not(:disabled) {
+  background: var(--primary-700);
+}
+
+.tc-primary-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tc-primary-btn svg {
+  width: 17px;
+  height: 17px;
+}
+
+.tc-primary-btn circle {
+  stroke: currentColor;
+  stroke-width: 1.8;
+  fill: none;
+}
+
+/* ── stats ── */
+.tc-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.tc-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 16px;
   border: 1px solid var(--border-color);
   border-radius: 12px;
   background: var(--bg-card);
 }
 
-.training-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  padding: 18px 20px;
-}
-
-.training-header h1 {
-  margin: 2px 0 0;
-  color: var(--text-primary);
-  font-size: 24px;
-  font-weight: 900;
-  line-height: 1.25;
-}
-
-.training-header p {
-  max-width: 78ch;
-  margin: 6px 0 0;
-  color: var(--text-secondary);
-  font-size: 13px;
-  line-height: 1.65;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 0 0 auto;
-}
-
-.primary-action,
-.secondary-action,
-.text-action,
-.wide-action,
-.job-actions a {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 36px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 850;
-  cursor: pointer;
-  white-space: nowrap;
-  transition:
-    background-color var(--transition-fast),
-    border-color var(--transition-fast),
-    color var(--transition-fast);
-}
-
-.primary-action,
-.wide-action {
-  padding: 0 14px;
-  background: var(--primary-600);
-  color: white;
-}
-
-.primary-action:hover,
-.primary-action:focus-visible,
-.wide-action:hover,
-.wide-action:focus-visible {
-  background: var(--primary-700);
-}
-
-.secondary-action,
-.text-action,
-.job-actions a,
-.wide-action.ghost {
-  padding: 0 12px;
-  border-color: color-mix(in srgb, var(--primary-500) 16%, transparent);
-  background: color-mix(in srgb, var(--primary-500) 7%, var(--bg-card));
-  color: var(--primary-600);
-}
-
-.secondary-action:hover,
-.secondary-action:focus-visible,
-.text-action:hover,
-.text-action:focus-visible,
-.job-actions a:hover,
-.job-actions a:focus-visible,
-.wide-action.ghost:hover,
-.wide-action.ghost:focus-visible {
-  border-color: color-mix(in srgb, var(--primary-500) 28%, transparent);
-  background: color-mix(in srgb, var(--primary-500) 10%, var(--bg-card));
-  color: var(--primary-700);
-}
-
-.primary-action:disabled,
-.text-action:disabled,
-.wide-action:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
-.primary-action:disabled:hover,
-.wide-action:disabled:not(.ghost):hover {
-  background: var(--primary-600);
-  color: white;
-}
-
-.text-action:disabled:hover,
-.wide-action.ghost:disabled:hover {
-  border-color: color-mix(in srgb, var(--primary-500) 16%, transparent);
-  background: color-mix(in srgb, var(--primary-500) 7%, var(--bg-card));
-  color: var(--primary-600);
-}
-
-.secondary-action:focus-visible,
-.text-action:focus-visible,
-.primary-action:focus-visible,
-.wide-action:focus-visible,
-.job-select:focus-visible,
-.job-row:focus-visible,
-.job-actions a:focus-visible,
-.section-head a:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--primary-500) 58%, transparent);
-  outline-offset: 2px;
-}
-
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.stat-card {
-  min-width: 0;
-  padding: 14px;
-}
-
-.kicker,
-.panel-label,
-.stat-card span {
+.tc-stat-label {
   color: var(--text-muted);
   font-size: 11px;
-  font-weight: 850;
-  line-height: 1.35;
+  font-weight: 700;
 }
 
-.stat-card strong {
-  display: block;
-  margin-top: 5px;
+.tc-stat-value {
   color: var(--text-primary);
   font-size: 26px;
   font-weight: 900;
   line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
-.stat-card p {
-  margin-top: 8px;
+.tc-stat-note {
   color: var(--text-secondary);
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: 11px;
 }
 
-.training-layout {
+/* ── layout ── */
+.tc-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
-  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 16px;
   align-items: start;
 }
 
-.training-main,
-.training-side {
+.tc-main,
+.tc-aside {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
   min-width: 0;
 }
 
-.section-card,
-.side-card {
-  padding: 16px;
+/* ── section ── */
+.tc-section,
+.tc-side-card {
+  padding: 18px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--bg-card);
 }
 
-.section-head {
+.tc-section-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-width: 0;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
-.section-head.compact,
-.toolbar-head {
-  align-items: center;
-}
-
-.section-head h2 {
-  margin: 3px 0 0;
+.tc-section-head h2 {
+  margin: 0;
   color: var(--text-primary);
-  font-size: 17px;
-  font-weight: 900;
-  line-height: 1.3;
-}
-
-.section-head a {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 30px;
-  padding: 0 9px;
-  border-radius: 8px;
-  color: var(--primary-600);
-  font-size: 12px;
-  font-weight: 850;
-  transition:
-    background-color var(--transition-fast),
-    color var(--transition-fast);
-}
-
-.section-head a:hover {
-  background: color-mix(in srgb, var(--primary-500) 8%, var(--bg-card));
-  color: var(--primary-700);
-}
-
-.job-select {
-  width: min(360px, 100%);
-  min-height: 36px;
-  padding: 0 10px;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background: var(--bg-input);
-  color: var(--text-primary);
-  font-size: 12px;
-  outline: none;
-  transition:
-    background-color var(--transition-fast),
-    border-color var(--transition-fast);
-}
-
-.job-select:hover,
-.job-select:focus {
-  border-color: var(--border-accent);
-  background: var(--bg-card);
-}
-
-.job-list {
-  display: grid;
-  gap: 9px;
-}
-
-.job-row {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.9fr) auto;
-  gap: 12px;
-  align-items: center;
-  min-width: 0;
-  padding: 12px;
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  background: var(--bg-card-muted);
-  cursor: pointer;
-  transition:
-    background-color var(--transition-fast),
-    border-color var(--transition-fast);
-}
-
-.job-row:hover {
-  border-color: color-mix(in srgb, var(--primary-500) 24%, var(--border-color));
-  background: color-mix(in srgb, var(--primary-500) 5%, var(--bg-card));
-}
-
-.job-row.active {
-  border-color: var(--border-accent);
-  background: color-mix(in srgb, var(--accent-info) 7%, var(--bg-card));
-}
-
-.job-row.active::before {
-  position: absolute;
-  inset: 10px auto 10px 0;
-  width: 3px;
-  border-radius: 999px;
-  background: var(--primary-600);
-  content: "";
-}
-
-.job-row--high-risk:not(.active) {
-  border-color: color-mix(in srgb, var(--accent-red) 22%, var(--border-color));
-}
-
-.job-row--medium-risk:not(.active) {
-  border-color: color-mix(in srgb, var(--accent-orange) 20%, var(--border-color));
-}
-
-.job-main {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-}
-
-.job-main > div:first-child,
-.seed-item,
-.review-item > div {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.job-main strong,
-.plan-card strong,
-.guide-card strong,
-.seed-item strong,
-.review-item strong {
-  color: var(--text-primary);
-  font-size: 13px;
-  font-weight: 900;
-  line-height: 1.35;
-}
-
-.job-main span,
-.plan-card p,
-.guide-card p,
-.seed-item span,
-.review-item span,
-.side-note,
-.mini-empty {
-  color: var(--text-secondary);
-  font-size: 12px;
-  line-height: 1.55;
-}
-
-.job-main strong,
-.job-main > div:first-child span,
-.seed-item strong,
-.review-item strong,
-.review-item span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tag-row,
-.topic-list,
-.dimension-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.tag-row span,
-.topic-list span,
-.dimension-list span {
-  min-height: 24px;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: var(--bg-card);
-  color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 16px;
   font-weight: 800;
 }
 
-.tag-row .tag-pill--watching {
-  background: color-mix(in srgb, var(--gray-500) 14%, var(--bg-card));
+.tc-section-sub {
   color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 13px;
 }
 
-.tag-row .tag-pill--ready,
-.tag-row .tag-pill--applied {
-  background: color-mix(in srgb, var(--primary-500) 10%, var(--bg-card));
-  color: var(--primary-600);
-}
-
-.tag-row .tag-pill--interviewing,
-.tag-row .tag-pill--risk-medium,
-.tag-row .priority-pill--medium {
-  background: color-mix(in srgb, var(--accent-orange) 10%, var(--bg-card));
-  color: var(--accent-orange);
-}
-
-.tag-row .tag-pill--offer,
-.tag-row .tag-pill--risk-low,
-.tag-row .priority-pill--low {
-  background: color-mix(in srgb, var(--accent-green) 10%, var(--bg-card));
-  color: var(--accent-green);
-}
-
-.tag-row .tag-pill--rejected,
-.tag-row .tag-pill--risk-high,
-.tag-row .priority-pill--high {
-  background: color-mix(in srgb, var(--accent-red) 9%, var(--bg-card));
-  color: var(--accent-red);
-}
-
-.job-metrics {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 7px;
-  margin: 0;
-}
-
-.job-metrics div {
-  min-width: 0;
-  padding: 8px;
+.tc-select {
+  min-height: 32px;
+  padding: 0 10px;
   border: 1px solid var(--border-color);
   border-radius: 8px;
   background: var(--bg-card);
-  transition: border-color var(--transition-fast);
-}
-
-.job-row:hover .job-metrics div,
-.job-row.active .job-metrics div {
-  border-color: color-mix(in srgb, var(--primary-500) 20%, var(--border-color));
-}
-
-.job-metrics dt,
-.review-item time {
-  color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 850;
-}
-
-.job-metrics dd {
-  margin: 3px 0 0;
   color: var(--text-primary);
-  font-size: 13px;
-  font-weight: 900;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
 }
 
-.job-actions {
-  display: flex;
-  gap: 6px;
+.tc-select:hover {
+  border-color: var(--border-accent);
 }
 
-.plan-grid,
-.guide-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.plan-card,
-.guide-card,
-.seed-item,
-.review-item {
-  position: relative;
-  min-width: 0;
+.tc-text-btn {
+  min-height: 30px;
+  padding: 0 12px;
   border: 1px solid var(--border-color);
-  border-radius: 10px;
-  background: var(--bg-card-muted);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--primary-600);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
 }
 
-.plan-card,
-.guide-card {
+.tc-text-btn:hover:not(:disabled) {
+  background: rgba(43, 123, 184, 0.06);
+}
+
+.tc-text-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── job list ── */
+.tc-job-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  min-height: 164px;
-  padding: 12px;
 }
 
-.plan-card::before {
-  position: absolute;
-  inset: 0 0 auto;
-  height: 3px;
-  border-radius: 10px 10px 0 0;
-  background: var(--border-color-strong);
-  content: "";
+.tc-job-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-card);
+  cursor: pointer;
+  position: relative;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
-.plan-card--active::before {
-  background: var(--primary-600);
+.tc-job-row:hover {
+  border-color: var(--border-accent);
+  background: rgba(43, 123, 184, 0.03);
 }
 
-.plan-card--warning::before {
-  background: var(--accent-orange);
+.tc-job-row.active {
+  border-color: var(--primary-500);
+  background: var(--state-info-bg);
 }
 
-.plan-card--ready::before {
-  background: var(--accent-green);
+.tc-job-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 160px;
+  flex-shrink: 0;
 }
 
-.plan-card--pending::before {
-  background: var(--gray-400);
+.tc-job-main strong {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.plan-card--warning {
-  border-color: color-mix(in srgb, var(--accent-orange) 30%, var(--border-color));
-  background: color-mix(in srgb, var(--accent-orange) 7%, var(--bg-card));
+.tc-job-main span {
+  color: var(--text-secondary);
+  font-size: 12px;
 }
 
-.plan-card--active {
-  border-color: color-mix(in srgb, var(--primary-500) 26%, var(--border-color));
-  background: color-mix(in srgb, var(--primary-500) 5%, var(--bg-card));
+.tc-job-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  flex-wrap: wrap;
 }
 
-.plan-card--ready {
-  border-color: color-mix(in srgb, var(--accent-green) 24%, var(--border-color));
-  background: color-mix(in srgb, var(--accent-green) 5%, var(--bg-card));
+.tc-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: var(--bg-card-muted);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
 }
 
-.plan-card--pending {
+.tc-chip--risk {
+  border: 1px solid var(--state-warning-border);
+  background: var(--state-warning-bg);
+  color: var(--state-warning-text);
+}
+
+.tc-metric {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.tc-job-link {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  color: var(--primary-600);
+  font-size: 11px;
+  font-weight: 800;
+  text-decoration: none;
+  transition: background-color 0.15s ease;
+}
+
+.tc-job-link:hover {
+  background: rgba(43, 123, 184, 0.06);
+}
+
+/* ── plan grid ── */
+.tc-plan-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.tc-plan-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-card);
+  position: relative;
+}
+
+.tc-plan--ready {
+  border-color: var(--state-success-border);
+  background: var(--state-success-bg);
+}
+
+.tc-plan--active {
+  border-color: var(--state-info-border);
+  background: var(--state-info-bg);
+}
+
+.tc-plan--warning {
+  border-color: var(--state-warning-border);
+  background: var(--state-warning-bg);
+}
+
+.tc-plan--pending {
   background: var(--bg-card-muted);
 }
 
-.plan-card-head {
+.tc-plan-head {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: 8px;
 }
 
-.plan-card-head span {
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--primary-500) 9%, var(--bg-card));
-  color: var(--primary-600);
-  font-size: 11px;
-  font-weight: 900;
-  white-space: nowrap;
-}
-
-.plan-card p,
-.guide-card p {
-  margin: 0;
-}
-
-.plan-card ul {
-  display: grid;
-  gap: 6px;
-  margin: 0;
-  padding-left: 16px;
-}
-
-.plan-card li {
+.tc-plan-head strong {
   color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.tc-plan-head span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.tc-plan--ready .tc-plan-head span {
+  color: var(--state-success-text);
+}
+
+.tc-plan--active .tc-plan-head span {
+  color: var(--state-info-text);
+}
+
+.tc-plan--warning .tc-plan-head span {
+  color: var(--state-warning-text);
+}
+
+.tc-plan-card > p {
+  margin: 0;
+  color: var(--text-secondary);
   font-size: 12px;
   line-height: 1.5;
 }
 
-.seed-list,
-.review-list {
-  display: grid;
-  gap: 8px;
+.tc-plan-card ul {
+  margin: 0;
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
 
-.seed-item,
-.review-item {
-  padding: 10px;
-  transition:
-    background-color var(--transition-fast),
-    border-color var(--transition-fast);
+.tc-plan-card li {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
-.seed-item:hover,
-.review-item:hover {
-  border-color: color-mix(in srgb, var(--primary-500) 22%, var(--border-color));
-  background: color-mix(in srgb, var(--primary-500) 5%, var(--bg-card));
+.tc-plan-empty {
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
-.review-item {
+/* ── aside ── */
+.tc-side-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  margin-bottom: 12px;
 }
 
-.wide-action {
+.tc-side-head h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.tc-side-count {
+  color: var(--primary-600);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.tc-side-link {
+  color: var(--primary-600);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.tc-side-link:hover {
+  color: var(--primary-700);
+}
+
+.tc-seed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 12px;
+}
+
+.tc-seed-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-card-muted);
+}
+
+.tc-seed-item strong {
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.tc-seed-item span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.tc-side-note {
+  margin: 0 0 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.tc-wide-btn {
   width: 100%;
-  margin-top: 12px;
+  min-height: 38px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 9px;
+  background: var(--primary-600);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
 }
 
-.empty-block {
-  padding: 18px;
+.tc-wide-btn:hover:not(:disabled) {
+  background: var(--primary-700);
+}
+
+.tc-wide-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tc-wide-btn.ghost {
+  background: transparent;
+  color: var(--primary-600);
+  border: 1px solid var(--primary-500);
+}
+
+.tc-wide-btn.ghost:hover:not(:disabled) {
+  background: var(--state-info-bg);
+}
+
+.tc-empty {
+  padding: 28px 18px;
   border: 1px dashed var(--border-color-strong);
   border-radius: 10px;
   color: var(--text-secondary);
   font-size: 13px;
-  line-height: 1.7;
+  text-align: center;
   background: var(--bg-card-muted);
 }
 
-.mini-empty {
-  padding: 10px;
-  border: 1px dashed var(--border-color);
-  border-radius: 8px;
-}
-
-@media (max-width: 1180px) {
-  .stats-grid,
-  .plan-grid,
-  .guide-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .training-layout {
+/* ── 响应式 ── */
+@media (max-width: 1024px) {
+  .tc-layout {
     grid-template-columns: 1fr;
-  }
-
-  .job-row {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .job-actions {
-    justify-content: flex-start;
   }
 }
 
-@media (max-width: 760px) {
-  .training-scroll {
-    padding: 64px 12px 12px;
-  }
-
-  .training-header,
-  .header-actions,
-  .toolbar-head,
-  .section-head {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .primary-action,
-  .secondary-action,
-  .text-action {
-    width: 100%;
-  }
-
-  .stats-grid,
-  .plan-grid,
-  .guide-grid,
-  .job-metrics {
+@media (max-width: 768px) {
+  .tc-plan-grid {
     grid-template-columns: 1fr;
   }
 
-  .training-header h1 {
-    font-size: 21px;
+  .tc-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .tc-job-row {
+    flex-wrap: wrap;
+  }
+
+  .tc-job-main {
+    min-width: 0;
+    flex: 1;
   }
 }
 </style>

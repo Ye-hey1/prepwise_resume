@@ -80,11 +80,14 @@ function formatDate(value: string): string {
 
 <style scoped>
 .project-sop-list {
-  width: 280px;
-  min-width: 260px;
-  height: 100%;
-  padding: 18px;
-  border-right: 1px solid var(--border-color);
+  position: sticky;
+  top: 0;
+  width: 100%;
+  min-width: 0;
+  max-height: calc(100vh - 120px);
+  padding: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
   background: var(--bg-card);
   overflow: auto;
 }
@@ -115,7 +118,7 @@ h2 {
 .import-btn,
 .dossier-actions button {
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
+  border-radius: 8px;
   background: var(--bg-elevated);
   color: var(--text-primary);
   cursor: pointer;
@@ -123,8 +126,8 @@ h2 {
 }
 
 .icon-btn {
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
   font-size: 1.2rem;
   line-height: 1;
 }
@@ -138,9 +141,17 @@ h2 {
 
 .import-btn {
   width: 100%;
-  min-height: 36px;
-  margin-bottom: 14px;
+  min-height: 42px;
+  margin-bottom: 16px;
+  border-color: var(--primary-600);
+  background: var(--primary-600);
+  color: #fff;
   font-weight: 600;
+}
+
+.import-btn:hover {
+  border-color: var(--primary-700);
+  background: var(--primary-700);
 }
 
 .list-items {
@@ -149,19 +160,22 @@ h2 {
 }
 
 .dossier-card {
+  position: relative;
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
+  border-radius: 10px;
   background: var(--bg-elevated);
   overflow: hidden;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast);
 }
 
 .dossier-card.active {
   border-color: var(--primary-400);
+  background: var(--primary-50);
 }
 
 .dossier-main {
   width: 100%;
-  padding: 12px;
+  padding: 14px 14px 10px;
   border: 0;
   background: transparent;
   text-align: left;
@@ -189,11 +203,11 @@ h2 {
 .dossier-actions {
   display: flex;
   gap: 8px;
-  padding: 0 12px 12px;
+  padding: 0 14px 14px;
 }
 
 .dossier-actions button {
-  min-height: 28px;
+  min-height: 32px;
   padding: 0 10px;
   font-size: 0.78rem;
 }
@@ -217,5 +231,12 @@ h2 {
 
 .empty-list span {
   font-size: 0.82rem;
+}
+
+@media (max-width: 1120px) {
+  .project-sop-list {
+    position: static;
+    max-height: none;
+  }
 }
 </style>

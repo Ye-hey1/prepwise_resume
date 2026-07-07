@@ -1,7 +1,6 @@
 /**
  * IndexedDB 存储层
  * 替代 localStorage 作为主存储，支持大容量数据持久化
- * 提供版本管理和数据校验机制
  */
 
 const DB_NAME = 'prepwise-db'
@@ -18,39 +17,16 @@ const STORES = {
 
 export type StoreName = typeof STORES[keyof typeof STORES]
 
-/** 数据包装结构，包含版本号和校验 */
+/** 数据包装结构 */
 export interface StorageEnvelope<T = unknown> {
   id: string
   data: T
-  version: number
-  checksum: string
   createdAt: string
   updatedAt: string
 }
 
-/** 简历快照 */
-export interface ResumeSnapshot {
-  id: string
-  resumeId: string
-  label: string
-  data: unknown
-  createdAt: string
-}
-
 let dbInstance: IDBDatabase | null = null
 let dbPromise: Promise<IDBDatabase> | null = null
-
-/** 计算简单校验和 */
-export function computeChecksum(data: unknown): string {
-  const str = JSON.stringify(data)
-  let hash = 0
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i)
-    hash = ((hash << 5) - hash) + char
-    hash |= 0
-  }
-  return Math.abs(hash).toString(36)
-}
 
 /** 打开数据库连接 */
 function openDB(): Promise<IDBDatabase> {
@@ -133,7 +109,7 @@ export async function dbGet<T>(storeName: StoreName, key: string): Promise<T | n
 }
 
 /** 通用写入 */
-export async function dbPut<T>(storeName: StoreName, key: string, data: T, version = 1): Promise<void> {
+export async function dbPut<T>(storeName: StoreName, key: string, data: T): Promise<void> {
   try {
     const db = await openDB()
     return new Promise((resolve, reject) => {
@@ -144,8 +120,6 @@ export async function dbPut<T>(storeName: StoreName, key: string, data: T, versi
       const envelope: StorageEnvelope<T> = {
         id: key,
         data,
-        version,
-        checksum: computeChecksum(data),
         createdAt: now,
         updatedAt: now,
       }
@@ -193,107 +167,6 @@ export async function dbGetAll<T>(storeName: StoreName): Promise<T[]> {
   } catch (error) {
     console.warn(`[Storage] dbGetAll 失败 (${storeName}):`, error)
     return []
-  }
-}
-
-/** 按索引查询 */
-export async function dbGetByIndex<T>(
-  storeName: StoreName,
-  indexName: string,
-  value: IDBValidKey,
-): Promise<T[]> {
-  try {
-    const db = await openDB()
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(storeName, 'readonly')
-      const store = tx.objectStore(storeName)
-      const index = store.index(indexName)
-      const request = index.getAll(value)
-
-      request.onsuccess = () => {
-        const results = (request.result as StorageEnvelope<T>[]) ?? []
-        resolve(results.map(r => r.data))
-      }
-      request.onerror = () => reject(request.error)
-    })
-  } catch (error) {
-    console.warn(`[Storage] dbGetByIndex 失败 (${storeName}/${indexName}):`, error)
-    return []
-  }
-}
-
-/** 获取记录数量 */
-export async function dbCount(storeName: StoreName): Promise<number> {
-  try {
-    const db = await openDB()
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(storeName, 'readonly')
-      const store = tx.objectStore(storeName)
-      const request = store.count()
-      request.onsuccess = () => resolve(request.result)
-      request.onerror = () => reject(request.error)
-    })
-  } catch (error) {
-    console.warn(`[Storage] dbCount 失败 (${storeName}):`, error)
-    return 0
-  }
-}
-
-/** 清空指定存储 */
-export async function dbClear(storeName: StoreName): Promise<void> {
-  try {
-    const db = await openDB()
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(storeName, 'readwrite')
-      const store = tx.objectStore(storeName)
-      const request = store.clear()
-      request.onsuccess = () => resolve()
-      request.onerror = () => reject(request.error)
-    })
-  } catch (error) {
-    console.warn(`[Storage] dbClear 失败 (${storeName}):`, error)
-  }
-}
-
-/** 导出所有数据（用于备份） */
-export async function exportAllData(): Promise<Record<string, unknown[]>> {
-  const result: Record<string, unknown[]> = {}
-  for (const storeName of Object.values(STORES)) {
-    result[storeName] = await dbGetAll(storeName)
-  }
-  return result
-}
-
-/** 导入数据（用于恢复） */
-export async function importAllData(data: Record<string, unknown[]>): Promise<void> {
-  const db = await openDB()
-
-  for (const [storeName, items] of Object.entries(data)) {
-    if (!Object.values(STORES).includes(storeName as StoreName)) continue
-    if (!Array.isArray(items)) continue
-
-    const tx = db.transaction(storeName, 'readwrite')
-    const store = tx.objectStore(storeName)
-
-    for (const item of items) {
-      if (item && typeof item === 'object' && 'id' in (item as Record<string, unknown>)) {
-        const now = new Date().toISOString()
-        const envelope: StorageEnvelope = {
-          id: (item as Record<string, unknown>).id as string,
-          data: item,
-          version: 1,
-          checksum: computeChecksum(item),
-          createdAt: now,
-          updatedAt: now,
-        }
-        store.put(envelope)
-      }
-    }
-
-    await new Promise<void>((resolve, reject) => {
-      tx.oncomplete = () => resolve()
-      tx.onerror = () => reject(tx.error)
-    })
   }
 }
 

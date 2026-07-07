@@ -114,9 +114,26 @@ export interface ProjectSopArtifact {
   missingPlaceholders: string[]
 }
 
+export interface ProjectSopResearchSource {
+  title: string
+  url: string
+  content: string
+  providerName: string
+  publishedDate: string
+}
+
+export interface ProjectSopResearchBrief {
+  fetchedAt: string
+  queries: string[]
+  markdown: string
+  sources: ProjectSopResearchSource[]
+}
+
 export interface ProjectSopGenerationInput {
   dossier: ProjectSopDossier
   validation: ProjectSopValidation
   resumeProjectText: string
   jdContextText: string
+  webResearchText?: string
+  generationMode?: 'strict' | 'autoDraft'
 }

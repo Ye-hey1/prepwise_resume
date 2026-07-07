@@ -168,14 +168,16 @@ export const useProjectSopStore = defineStore('projectSop', () => {
     return dossier
   }
 
-  function updateDossier(id: string, patch: Partial<ProjectSopDossier>) {
+  function updateDossier(id: string, patch: Partial<ProjectSopDossier>): ProjectSopDossier | null {
     const index = dossiers.value.findIndex(item => item.id === id)
-    if (index < 0) return
-    dossiers.value[index] = {
+    if (index < 0) return null
+    const next = {
       ...dossiers.value[index]!,
       ...patch,
       updatedAt: nowIso(),
     }
+    dossiers.value[index] = next
+    return next
   }
 
   function duplicateDossier(id: string) {

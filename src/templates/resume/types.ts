@@ -4,11 +4,7 @@ export type ResumeTemplateCategory =
   | 'ats'
   | 'tech'
   | 'product'
-  | 'consulting'
-  | 'academic'
-  | 'medical'
   | 'management'
-  | 'design'
 
 export interface ResumeTemplateModel {
   key: string

@@ -94,8 +94,12 @@ watch(
           <input v-model="draft.name" type="text" placeholder="例如：智能简历优化平台" @blur="commit" />
         </label>
         <label>
-          <span>行业 / 业务线</span>
-          <input v-model="draft.industry" type="text" placeholder="例如：招聘 SaaS / 求职工具" @blur="commit" />
+          <span>所属行业</span>
+          <input v-model="draft.industry" type="text" placeholder="例如：招聘 SaaS" @blur="commit" />
+        </label>
+        <label>
+          <span>业务线</span>
+          <input v-model="draft.businessLine" type="text" placeholder="例如：求职工具 / 数据平台" @blur="commit" />
         </label>
         <label>
           <span>开始时间</span>
@@ -355,36 +359,45 @@ watch(
 <style scoped>
 .dossier-form {
   display: grid;
-  gap: 14px;
-  padding: 20px;
-}
-
-.form-section {
-  padding: 16px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
+  gap: 0;
   background: var(--bg-card);
 }
 
+.form-section {
+  display: grid;
+  grid-template-columns: 152px minmax(0, 1fr);
+  gap: 20px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border-color);
+  background: transparent;
+}
+
+.form-section:last-child {
+  border-bottom: 0;
+}
+
 .section-heading {
-  margin-bottom: 14px;
+  margin: 0;
 }
 
 .section-heading p {
   margin: 0 0 4px;
-  font-size: 0.98rem;
+  font-size: 0.92rem;
   font-weight: 700;
   color: var(--text-primary);
 }
 
 .section-heading span {
+  display: block;
+  max-width: 22ch;
   font-size: 0.8rem;
+  line-height: 1.5;
   color: var(--text-secondary);
 }
 
 .inline-heading {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
 }
@@ -414,7 +427,14 @@ watch(
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 14px 12px;
+}
+
+.form-section > .form-grid,
+.form-section > .block-label,
+.form-section > .repeat-list,
+.form-section > .feedback-grid {
+  min-width: 0;
 }
 
 label,
@@ -435,20 +455,20 @@ select,
 textarea {
   width: 100%;
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  background: var(--bg-elevated);
+  border-radius: 8px;
+  background: var(--bg-input);
   color: var(--text-primary);
   font: inherit;
 }
 
 input,
 select {
-  height: 36px;
+  height: 38px;
   padding: 0 10px;
 }
 
 textarea {
-  min-height: 72px;
+  min-height: 78px;
   padding: 10px;
   resize: vertical;
   line-height: 1.55;
@@ -471,10 +491,10 @@ textarea:focus {
 }
 
 .repeat-item {
-  padding: 12px;
+  padding: 14px;
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  background: var(--bg-elevated);
+  border-radius: 8px;
+  background: var(--bg-card-muted);
 }
 
 .repeat-header {
@@ -491,6 +511,7 @@ textarea:focus {
 
 .feedback-grid {
   margin-top: 12px;
+  grid-column: 2;
 }
 
 .empty-form {
@@ -510,6 +531,21 @@ textarea:focus {
 
 .empty-form p {
   margin: 0;
+}
+
+@media (max-width: 980px) {
+  .form-section {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .section-heading span {
+    max-width: none;
+  }
+
+  .feedback-grid {
+    grid-column: auto;
+  }
 }
 
 @media (max-width: 820px) {

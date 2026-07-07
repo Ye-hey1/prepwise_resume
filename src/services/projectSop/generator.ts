@@ -52,6 +52,13 @@ function buildUserPrompt(input: ProjectSopGenerationInput): string {
     .replace('{validation}', safeJsonStringify(input.validation))
     .replace('{resumeProjectText}', input.resumeProjectText || '无')
     .replace('{jdContextText}', input.jdContextText || '无')
+    .replace('{webResearchText}', input.webResearchText || '无')
+    .replace(
+      '{generationMode}',
+      input.generationMode === 'autoDraft'
+        ? '自动草稿模式：可以基于简历、JD 和公开资料推断表达框架；没有事实依据的数据必须保留待补充占位。'
+        : '严格档案模式：只基于已填写档案生成。',
+    )
 }
 
 export async function generateProjectSopArtifact(
@@ -60,7 +67,7 @@ export async function generateProjectSopArtifact(
   callbacks: StreamCallbacks,
   signal?: AbortSignal,
 ): Promise<ProjectSopArtifact> {
-  if (!input.validation.canGenerate) {
+  if (!input.validation.canGenerate && input.generationMode !== 'autoDraft') {
     throw new Error('项目信息仍有阻断级缺口，请先补全后再生成。')
   }
 

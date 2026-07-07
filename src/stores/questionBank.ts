@@ -46,7 +46,8 @@ export interface SavedQuestion {
 
 type QuestionRowPayload = Pick<
   SavedQuestion,
-  'content' | 'category' | 'tags' | 'reference_answer' | 'user_notes' | 'source' | 'mastery_level' | 
+  'content' | 'category' | 'tags' | 'reference_answer' | 'user_notes' | 'source' | 'mastery_level' |
+  'jd_analysis_id' | 'interview_session_id' | 'difficulty' | 'focus_area' | 'intent' | 'framework' |
   'source_url' | 'source_type' | 'posted_at' | 'frequency_score' | 'recency_score' | 
   'is_grounded' | 'resume_anchor' | 'follow_up_chain'
 >
@@ -60,6 +61,12 @@ function normalizeQuestionForDatabase(question: SavedQuestion): QuestionRowPaylo
     user_notes: question.user_notes ?? '',
     source: question.source ?? '',
     mastery_level: question.mastery_level ?? 0,
+    jd_analysis_id: question.jd_analysis_id ?? '',
+    interview_session_id: question.interview_session_id ?? '',
+    difficulty: question.difficulty ?? 3,
+    focus_area: question.focus_area ?? '',
+    intent: question.intent ?? '',
+    framework: question.framework ?? '',
     source_url: question.source_url ?? '',
     source_type: question.source_type ?? 'ai_generated',
     posted_at: question.posted_at ?? '',
@@ -81,6 +88,12 @@ function normalizeQuestionUpdate(payload: Partial<SavedQuestion>): Partial<Quest
   if (payload.user_notes !== undefined) next.user_notes = payload.user_notes
   if (payload.source !== undefined) next.source = payload.source
   if (payload.mastery_level !== undefined) next.mastery_level = payload.mastery_level
+  if (payload.jd_analysis_id !== undefined) next.jd_analysis_id = payload.jd_analysis_id
+  if (payload.interview_session_id !== undefined) next.interview_session_id = payload.interview_session_id
+  if (payload.difficulty !== undefined) next.difficulty = payload.difficulty
+  if (payload.focus_area !== undefined) next.focus_area = payload.focus_area
+  if (payload.intent !== undefined) next.intent = payload.intent
+  if (payload.framework !== undefined) next.framework = payload.framework
   
   // InterviewRadar 集成字段
   if (payload.source_url !== undefined) next.source_url = payload.source_url
@@ -116,6 +129,33 @@ function loadLocalQuestions(): SavedQuestion[] {
 
 function saveLocalQuestions(items: SavedQuestion[]) {
   localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(items))
+}
+
+function normalizeErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.message) return err.message
+  if (err && typeof err === 'object') {
+    const source = err as {
+      message?: unknown
+      details?: unknown
+      hint?: unknown
+      code?: unknown
+    }
+    const parts = [source.message, source.details, source.hint, source.code]
+      .filter((part): part is string | number => typeof part === 'string' || typeof part === 'number')
+      .map(String)
+      .filter(Boolean)
+    if (parts.length > 0) return parts.join('；')
+  }
+  if (typeof err === 'string' && err.trim()) return err
+  return fallback
+}
+
+function createLocalQuestion(question: SavedQuestion, index = 0): SavedQuestion {
+  return {
+    ...normalizeQuestionForDatabase(question),
+    id: genLocalId(),
+    created_at: question.created_at ?? new Date(Date.now() + index).toISOString(),
+  }
 }
 
 export const useQuestionBankStore = defineStore('questionBank', () => {
@@ -207,6 +247,29 @@ export const useQuestionBankStore = defineStore('questionBank', () => {
     }
   }
 
+  function addQuestionsToLocal(items: SavedQuestion[]): SavedQuestion[] {
+    const newItems = items.map(createLocalQuestion)
+    const existingItems = loadLocalQuestions()
+    saveLocalQuestions([...newItems, ...existingItems])
+    return newItems
+  }
+
+  function removeQuestionFromLocal(id: string) {
+    const existingItems = loadLocalQuestions()
+    saveLocalQuestions(existingItems.filter(q => q.id !== id))
+  }
+
+  function updateQuestionInLocal(id: string, payload: Partial<SavedQuestion>): SavedQuestion | null {
+    const existingItems = loadLocalQuestions()
+    const nextItems = existingItems.map((item) => (
+      item.id === id ? { ...item, ...payload } as SavedQuestion : item
+    ))
+    const updated = nextItems.find(item => item.id === id) ?? null
+    if (!updated) return null
+    saveLocalQuestions(nextItems)
+    return updated
+  }
+
   // ── 收藏新题目 ──
   async function addQuestion(q: SavedQuestion) {
     mutationErrorMsg.value = ''
@@ -214,16 +277,13 @@ export const useQuestionBankStore = defineStore('questionBank', () => {
     // 本地模式
     if (isLocalMode.value || !supabase) {
       try {
-        const newQuestion: SavedQuestion = {
-          ...normalizeQuestionForDatabase(q),
-          id: genLocalId(),
-          created_at: new Date().toISOString(),
-        }
+        const newItems = addQuestionsToLocal([q])
+        const newQuestion = newItems[0]
+        if (!newQuestion) throw new Error('保存题目失败')
         questions.value.unshift(newQuestion)
-        saveLocalQuestions(questions.value)
         return true
       } catch (err: unknown) {
-        mutationErrorMsg.value = '保存题目失败'
+        mutationErrorMsg.value = normalizeErrorMessage(err, '保存题目失败')
         return false
       }
     }
@@ -238,10 +298,23 @@ export const useQuestionBankStore = defineStore('questionBank', () => {
       }
       return true
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : '保存题目失败'
-      console.error('添加题目失败:', err)
-      mutationErrorMsg.value = message
-      return false
+      console.warn('[QuestionBank] Supabase 添加题目失败，回退到本地存储:', err)
+      try {
+        isLocalMode.value = true
+        const newItems = addQuestionsToLocal([q])
+        const newQuestion = newItems[0]
+        if (!newQuestion) throw new Error('保存题目失败')
+        questions.value.unshift(newQuestion)
+        return true
+      } catch (localErr: unknown) {
+        const message = normalizeErrorMessage(
+          localErr,
+          normalizeErrorMessage(err, '保存题目失败'),
+        )
+        console.error('添加题目失败:', { remote: err, local: localErr })
+        mutationErrorMsg.value = message
+        return false
+      }
     }
   }
 
@@ -253,16 +326,11 @@ export const useQuestionBankStore = defineStore('questionBank', () => {
     // 本地模式
     if (isLocalMode.value || !supabase) {
       try {
-        const newItems = items.map(q => ({
-          ...normalizeQuestionForDatabase(q),
-          id: genLocalId(),
-          created_at: new Date().toISOString(),
-        }))
+        const newItems = addQuestionsToLocal(items)
         questions.value = [...newItems, ...questions.value]
-        saveLocalQuestions(questions.value)
         return newItems.length
       } catch (err: unknown) {
-        mutationErrorMsg.value = '批量保存题目失败'
+        mutationErrorMsg.value = normalizeErrorMessage(err, '批量保存题目失败')
         return 0
       }
     }
@@ -277,10 +345,21 @@ export const useQuestionBankStore = defineStore('questionBank', () => {
       }
       return data?.length ?? 0
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : '批量保存题目失败'
-      console.error('批量添加失败:', err)
-      mutationErrorMsg.value = message
-      return 0
+      console.warn('[QuestionBank] Supabase 批量保存失败，回退到本地存储:', err)
+      try {
+        isLocalMode.value = true
+        const newItems = addQuestionsToLocal(items)
+        questions.value = [...newItems, ...questions.value]
+        return newItems.length
+      } catch (localErr: unknown) {
+        const message = normalizeErrorMessage(
+          localErr,
+          normalizeErrorMessage(err, '批量保存题目失败'),
+        )
+        console.error('批量添加失败:', { remote: err, local: localErr })
+        mutationErrorMsg.value = message
+        return 0
+      }
     }
   }
 
@@ -291,10 +370,10 @@ export const useQuestionBankStore = defineStore('questionBank', () => {
     // 本地模式
     if (isLocalMode.value || !supabase) {
       try {
+        const updated = updateQuestionInLocal(id, payload)
+        if (!updated) return false
         const index = questions.value.findIndex(q => q.id === id)
-        if (index === -1) return false
-        questions.value[index] = { ...questions.value[index], ...payload } as SavedQuestion
-        saveLocalQuestions(questions.value)
+        if (index !== -1) questions.value[index] = { ...questions.value[index], ...updated }
         return true
       } catch {
         mutationErrorMsg.value = '更新题目失败'
@@ -342,8 +421,8 @@ export const useQuestionBankStore = defineStore('questionBank', () => {
     // 本地模式
     if (isLocalMode.value || !supabase) {
       try {
+        removeQuestionFromLocal(id)
         questions.value = questions.value.filter(q => q.id !== id)
-        saveLocalQuestions(questions.value)
         return true
       } catch {
         mutationErrorMsg.value = '删除题目失败'
@@ -365,6 +444,37 @@ export const useQuestionBankStore = defineStore('questionBank', () => {
     }
   }
 
+  // 删除某个 JD 分析沉淀的所有题目（删 JD 时级联调用）
+  async function deleteByJdAnalysisId(jdId: string): Promise<boolean> {
+    if (!jdId) return true
+    mutationErrorMsg.value = ''
+
+    if (isLocalMode.value || !supabase || !hasSupabaseConfig) {
+      try {
+        const allQuestions = loadLocalQuestions()
+        saveLocalQuestions(allQuestions.filter((q) => q.jd_analysis_id !== jdId))
+        questions.value = questions.value.filter((q) => q.jd_analysis_id !== jdId)
+        return true
+      } catch {
+        mutationErrorMsg.value = '删除关联题目失败'
+        return false
+      }
+    }
+
+    try {
+      const { error } = await supabase.from('questions').delete().eq('jd_analysis_id', jdId)
+      if (error) throw error
+
+      questions.value = questions.value.filter((q) => q.jd_analysis_id !== jdId)
+      return true
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : '删除关联题目失败'
+      console.error('删除 JD 关联题目失败:', err)
+      mutationErrorMsg.value = message
+      return false
+    }
+  }
+
   return {
     questions,
     isLoading,
@@ -378,5 +488,6 @@ export const useQuestionBankStore = defineStore('questionBank', () => {
     updateQuestion,
     updateMastery,
     deleteQuestion,
+    deleteByJdAnalysisId,
   }
 })

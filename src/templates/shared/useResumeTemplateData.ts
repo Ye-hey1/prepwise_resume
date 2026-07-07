@@ -127,12 +127,6 @@ export function useResumeTemplateData() {
     ].some((value) => value?.trim())
   }
 
-  function personalWorkMetaParts(work: { type?: string; techStack?: string; outcome?: string }): string[] {
-    return [work.type, work.techStack, work.outcome]
-      .map((value) => value?.trim() ?? '')
-      .filter(Boolean)
-  }
-
   function hasTrainingContent(training: {
     institution?: string
     course?: string
@@ -230,7 +224,6 @@ export function useResumeTemplateData() {
     workTitleParts,
     workSideParts,
     hasPersonalWorkContent,
-    personalWorkMetaParts,
     hasTrainingContent,
     trainingMetaParts,
     hasCustomSectionContent,

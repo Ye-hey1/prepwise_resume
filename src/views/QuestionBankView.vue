@@ -5,34 +5,27 @@ import AddQuestionDialog from '@/components/questionBank/AddQuestionDialog.vue'
 import AiGenerateDialog from '@/components/questionBank/AiGenerateDialog.vue'
 import RealExperienceDialog from '@/components/questionBank/RealExperienceDialog.vue'
 import SourceBadge from '@/components/questionBank/SourceBadge.vue'
-// 技术自测组件
-import QuizSetupPanel from '@/components/interview/QuizSetupPanel.vue'
-import QuizSessionView from '@/components/interview/QuizSessionView.vue'
-import QuizResultPanel from '@/components/interview/QuizResultPanel.vue'
+import QuizTrainingDialog from '@/components/interview/QuizTrainingDialog.vue'
 
 defineOptions({ name: 'QuestionBankView' })
 import { useQuestionBankStore, type SavedQuestion } from '@/stores/questionBank'
 import { useAiConfigStore } from '@/stores/aiConfig'
 import { useResumeStore } from '@/stores/resume'
-import { useInterviewQuizStore, type QuizSessionConfig } from '@/stores/interviewQuiz'
 import { nonStreamAIRequest } from '@/services/stream'
 
 type MasteryFilter = 'all' | 'unpracticed' | 'weak' | 'ready'
 type SortMode = 'newest' | 'weak-first' | 'mastery-desc'
 type SourceFilter = 'all' | 'ai_generated' | 'real_experience' | 'jd_analysis'
-type ViewTab = 'questions' | 'quiz-setup' | 'quiz-session' | 'quiz-result'
 
 const DRILL_SEED_STORAGE_KEY = 'prepwise_question_bank_drill_seed'
 
 const qbStore = useQuestionBankStore()
 const aiConfigStore = useAiConfigStore()
 const resumeStore = useResumeStore()
-const quizStore = useInterviewQuizStore()
 const router = useRouter()
 
-// Tab 切换状态
-const activeTab = ref<ViewTab>('questions')
-const currentQuizSessionId = ref<string | null>(null)
+// 自测训练弹窗
+const showQuizDialog = ref(false)
 
 // 题库相关状态
 const showAddDialog = ref(false)
@@ -351,44 +344,6 @@ async function saveAnswer() {
   savingAnswer.value = false
 }
 
-// 技术自测相关函数
-function startQuiz(config: QuizSessionConfig) {
-  const session = quizStore.createSession(config)
-  currentQuizSessionId.value = session.id
-  activeTab.value = 'quiz-session'
-}
-
-function completeQuiz() {
-  activeTab.value = 'quiz-result'
-}
-
-function exitQuiz() {
-  activeTab.value = 'questions'
-}
-
-function viewQuizResult(sessionId: string) {
-  currentQuizSessionId.value = sessionId
-  activeTab.value = 'quiz-result'
-}
-
-function restartQuizSession(sessionId: string) {
-  quizStore.restartSession(sessionId)
-  if (quizStore.currentSession) {
-    currentQuizSessionId.value = quizStore.currentSession.id
-    activeTab.value = 'quiz-session'
-  }
-}
-
-function newQuiz() {
-  currentQuizSessionId.value = null
-  activeTab.value = 'quiz-setup'
-}
-
-function viewQuizHistory() {
-  activeTab.value = 'quiz-result'
-  currentQuizSessionId.value = quizStore.sessions[0]?.id || null
-}
-
 onMounted(() => {
   void qbStore.fetchQuestions()
 })
@@ -399,39 +354,21 @@ onMounted(() => {
     <header class="qb-header">
       <div class="header-left">
         <div class="header-copy">
-          <h1>面试题库 & 自测</h1>
-          <p>沉淀题库、技术自测，系统化提升面试能力</p>
-        </div>
-
-        <!-- Tab 切换 -->
-        <div class="tab-switcher">
-          <button
-            type="button"
-            class="tab-btn"
-            :class="{ active: activeTab === 'questions' }"
-            @click="activeTab = 'questions'"
-          >
-            <span class="tab-icon">📚</span>
-            我的题库
-            <span class="tab-count">{{ stats.total }}</span>
-          </button>
-          <button
-            type="button"
-            class="tab-btn"
-            :class="{ active: activeTab === 'quiz-setup' || activeTab === 'quiz-session' || activeTab === 'quiz-result' }"
-            @click="activeTab = 'quiz-setup'"
-          >
-            <span class="tab-icon">🎯</span>
-            技术自测
-            <span v-if="quizStore.globalStats.totalAnswered > 0" class="tab-badge">
-              {{ quizStore.globalStats.totalAnswered }}
-            </span>
-          </button>
+          <h1>面试题库</h1>
+          <p>沉淀高频题与真实面经，自测训练巩固掌握度</p>
         </div>
       </div>
 
       <!-- 题库操作按钮 -->
-      <div class="header-actions" v-if="activeTab === 'questions'">
+      <div class="header-actions">
+        <button class="action-btn" type="button" @click="showQuizDialog = true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10" />
+            <circle cx="12" cy="12" r="6" />
+            <circle cx="12" cy="12" r="2" />
+          </svg>
+          自测训练
+        </button>
         <button class="action-btn secondary" type="button" @click="showAiDialog = true">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 3v4" />
@@ -463,32 +400,10 @@ onMounted(() => {
           添加题目
         </button>
       </div>
-
-      <!-- 技术自测操作按钮 -->
-      <div class="header-actions" v-else-if="activeTab === 'quiz-result'">
-        <button class="action-btn secondary" type="button" @click="newQuiz">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          新建自测
-        </button>
-        <button class="action-btn secondary" type="button" @click="viewQuizHistory" v-if="quizStore.sessions.length > 1">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M3 3v5h5M12 8l-4-4-4 4M21 21v-5h-5M12 16l4 4 4-4" />
-          </svg>
-          历史记录
-        </button>
-        <button class="action-btn secondary" type="button" @click="activeTab = 'quiz-setup'">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M11 17l2-2-2-2M3 12l2 2 2-2m10-6l2 2 2-2" />
-          </svg>
-          返回配置
-        </button>
-      </div>
     </header>
 
     <!-- 题库统计条 -->
-    <section v-if="activeTab === 'questions'" class="stat-strip" aria-label="题库统计">
+    <section class="stat-strip" aria-label="题库统计">
       <span>全部 <strong>{{ stats.total }}</strong></span>
       <span>待练 <strong>{{ stats.needsPractice }}</strong></span>
       <span>已练 <strong>{{ stats.practiced }}</strong></span>
@@ -497,16 +412,8 @@ onMounted(() => {
       <span>可追溯 <strong>{{ stats.grounded }}</strong></span>
     </section>
 
-    <!-- 技术自测统计条 -->
-    <section v-else class="stat-strip quiz-stats">
-      <span>总答题 <strong>{{ quizStore.globalStats.totalAnswered }}</strong></span>
-      <span>正确率 <strong>{{ quizStore.globalStats.accuracy }}%</strong></span>
-      <span>平均用时 <strong>{{ Math.round(quizStore.globalStats.avgTimeSpent / 60) }}分钟</strong></span>
-      <span>自测次数 <strong>{{ quizStore.sessions.length }}</strong></span>
-    </section>
-
     <!-- 题库筛选栏 -->
-    <section v-if="activeTab === 'questions'" class="toolbar">
+    <section class="toolbar">
       <div class="search-box">
         <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="11" cy="11" r="8" />
@@ -558,8 +465,7 @@ onMounted(() => {
     </section>
 
     <main class="main-content custom-scroll">
-      <!-- 我的题库内容 -->
-      <template v-if="activeTab === 'questions'">
+      <!-- 题库内容 -->
         <div v-if="qbStore.isLoading" class="state-box">
           <div class="loading-spinner"></div>
           <h3>正在加载题库</h3>
@@ -653,68 +559,6 @@ onMounted(() => {
             </article>
           </div>
         </template>
-      </template>
-
-      <!-- 技术自测配置 -->
-      <div v-else-if="activeTab === 'quiz-setup'" class="quiz-content">
-        <QuizSetupPanel @start="startQuiz" />
-      </div>
-
-      <!-- 技术自测答题界面 -->
-      <div v-else-if="activeTab === 'quiz-session'" class="quiz-content full">
-        <QuizSessionView
-          :session-id="currentQuizSessionId || undefined"
-          @complete="completeQuiz"
-          @exit="exitQuiz"
-        />
-      </div>
-
-      <!-- 技术自测结果 -->
-      <div v-else-if="activeTab === 'quiz-result'" class="quiz-content">
-        <template v-if="currentQuizSessionId">
-          <QuizResultPanel
-            :session-id="currentQuizSessionId"
-            @review="currentQuizSessionId = $event; activeTab = 'quiz-session'"
-            @restart="restartQuizSession"
-            @new="newQuiz"
-          />
-        </template>
-        <div v-else class="quiz-history">
-          <div class="history-header">
-            <h3>📚 自测历史</h3>
-            <p>共 {{ quizStore.sessions.length }} 条记录</p>
-          </div>
-
-          <div v-if="quizStore.sessions.length > 0" class="history-list">
-            <div
-              v-for="session in quizStore.sessions"
-              :key="session.id"
-              class="history-card"
-            >
-              <div class="history-card-main">
-                <h4>{{ session.name }}</h4>
-                <span class="session-date">{{ new Date(session.startedAt).toLocaleString() }}</span>
-                <div class="session-stats">
-                  <span class="stat-item correct">
-                    ✓ {{ Array.from(session.answers.values()).filter(a => a.isCorrect).length }} 正确
-                  </span>
-                  <span class="stat-item">{{ session.answers.size }} 题</span>
-                </div>
-              </div>
-              <div class="history-card-actions">
-                <button class="card-btn" type="button" @click="viewQuizResult(session.id)">查看结果</button>
-                <button class="card-btn secondary" type="button" @click="restartQuizSession(session.id)">重新测试</button>
-              </div>
-            </div>
-          </div>
-
-          <div v-else class="empty-state">
-            <span class="empty-icon">📝</span>
-            <p>还没有自测记录，开始第一次测试吧！</p>
-            <button class="action-btn primary" type="button" @click="newQuiz">开始自测</button>
-          </div>
-        </div>
-      </div>
     </main>
 
     <!-- 题库详情弹窗 -->
@@ -741,6 +585,9 @@ onMounted(() => {
         @saved="showRealExperienceDialog = false"
       />
     </Transition>
+
+    <!-- 自测训练弹窗 -->
+    <QuizTrainingDialog :open="showQuizDialog" @close="showQuizDialog = false" />
 
     <Transition name="modal-fade">
       <div v-if="selectedQuestion" class="modal-overlay" @click="closeQuestion">
@@ -964,8 +811,9 @@ onMounted(() => {
   display: flex;
   gap: 4px;
   padding: 4px;
-  background: var(--bg-card-muted);
-  border-radius: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 11px;
   align-self: flex-start;
 }
 
@@ -973,47 +821,79 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 16px;
+  padding: 8px 16px;
   border-radius: 8px;
   border: none;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 14px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 800;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color 0.16s ease, color 0.16s ease;
 }
 
 .tab-btn:hover {
+  background: rgba(43, 123, 184, 0.06);
   color: var(--text-primary);
-  background: color-mix(in srgb, var(--bg-elevated) 50%, transparent);
 }
 
 .tab-btn.active {
-  background: var(--bg-elevated);
-  color: var(--primary-600);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  background: var(--primary-600);
+  color: #fff;
 }
 
 .tab-icon {
-  font-size: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tab-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.tab-icon path,
+.tab-icon circle,
+.tab-icon rect {
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}
+
+.tab-label {
+  line-height: 1;
 }
 
 .tab-count {
-  padding: 2px 6px;
-  background: var(--bg-elevated);
+  padding: 2px 7px;
+  background: var(--bg-card-muted);
   border-radius: 999px;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.tab-btn.active .tab-count {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
 }
 
 .tab-badge {
-  padding: 2px 6px;
-  background: var(--primary-500);
+  padding: 2px 7px;
+  background: rgba(255, 255, 255, 0.22);
   color: #fff;
   border-radius: 999px;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.tab-btn:not(.active) .tab-badge {
+  background: var(--primary-500);
+  color: #fff;
 }
 
 /* 按钮样式 */
@@ -1073,37 +953,51 @@ onMounted(() => {
 .stat-strip {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 34px;
-  padding: 5px 12px;
+  min-height: 48px;
+  padding: 0 20px;
   border: 1px solid var(--border-color);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--bg-card-muted) 62%, transparent);
+  border-radius: 11px;
+  background: var(--bg-card);
   flex-shrink: 0;
   flex-wrap: wrap;
 }
 
 .stat-strip.quiz-stats {
-  background: color-mix(in srgb, var(--primary-500) 5%, var(--bg-card-muted));
-  border-color: color-mix(in srgb, var(--primary-500) 20%, var(--border-color));
+  background: rgba(43, 123, 184, 0.04);
+  border-color: var(--border-accent);
 }
 
 .stat-strip span {
   display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 24px;
-  padding: 0 8px;
-  border-radius: 7px;
+  align-items: baseline;
+  gap: 7px;
+  padding: 12px 22px;
   color: var(--text-secondary);
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
+  position: relative;
+}
+
+.stat-strip span:first-child {
+  padding-left: 0;
+}
+
+.stat-strip span + span::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1px;
+  height: 18px;
+  background: var(--border-color);
 }
 
 .stat-strip strong {
   color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
 }
 
 /* 筛选工具栏 */
@@ -1474,8 +1368,25 @@ button:disabled {
 .history-header h3 {
   margin: 0 0 4px;
   font-size: 20px;
-  font-weight: 700;
+  font-weight: 800;
   color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.history-header h3 svg {
+  width: 20px;
+  height: 20px;
+  color: var(--primary-600);
+}
+
+.history-header h3 path {
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
 }
 
 .history-header p {
@@ -1544,8 +1455,25 @@ button:disabled {
 }
 
 .empty-icon {
-  font-size: 64px;
-  opacity: 0.4;
+  display: inline-flex;
+  width: 56px;
+  height: 56px;
+  color: var(--primary-500);
+  opacity: 0.5;
+}
+
+.empty-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.empty-icon path,
+.empty-icon rect {
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
 }
 
 .empty-state p {

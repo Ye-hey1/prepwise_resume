@@ -434,7 +434,6 @@ onUnmounted(() => {
               @click="moduleMenuOpen = !moduleMenuOpen"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
-              <span class="hero-action-badge">{{ visibleCount }}</span>
             </button>
             <div
               v-if="moduleMenuOpen"
@@ -1095,26 +1094,6 @@ onUnmounted(() => {
   background: rgba(43, 123, 184, 0.1);
   color: var(--accent-blue-600);
 }
-
-.hero-action-badge {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 4px;
-  border-radius: 999px;
-  background: var(--accent-blue-600);
-  color: var(--text-inverse);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1;
-}
-
-
 
 /* ── 模块开关弹出框 ── */
 .hero-module-popover {
@@ -1959,6 +1938,12 @@ onUnmounted(() => {
   border-color: rgba(100, 120, 150, 0.18);
   background: transparent;
   color: var(--text-secondary);
+}
+
+.module-body :deep(.editor-ai-btn.ghost.active) {
+  border-color: rgba(43, 123, 184, 0.38);
+  background: rgba(43, 123, 184, 0.1);
+  color: var(--accent-blue-600);
 }
 
 .module-body :deep(.rich-editor-wrap) {

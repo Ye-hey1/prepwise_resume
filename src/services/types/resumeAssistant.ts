@@ -21,31 +21,6 @@ export interface ResumeFieldAiContext {
   targetJob?: string
 }
 
-export interface ResumeAssistantSuggestion {
-  id: string
-  text: string
-  tone?: string
-  highlight?: string
-}
-
-export interface ResumeAssistantExampleItem {
-  id: string
-  moduleKey: ResumeFieldAiModuleKey
-  text: string
-  tags: string[]
-  source: 'builtin' | 'ai'
-  tone?: string
-  highlight?: string
-}
-
-export interface ResumeAssistantAdviceItem {
-  id: string
-  title: string
-  problem: string
-  suggestion: string
-  example?: string
-}
-
 export interface ResumeAssistantApplyItem {
   id: string
   sectionId?: string
@@ -55,29 +30,13 @@ export interface ResumeAssistantApplyItem {
   applied: boolean
   category?: 'grammar' | 'content' | 'structure' | 'formatting'
   severity?: 'low' | 'medium' | 'high'
-}
-
-export interface ResumeAssistantMaterialItem {
-  id: string
-  title: string
-  moduleKey?: ResumeFieldAiModuleKey
-  type: 'project' | 'achievement' | 'skill' | 'experience'
-  content: string
-  tags: string[]
-  createdAt: string
-  updatedAt: string
-}
-
-export interface ResumeAssistantResult {
-  suggestions: ResumeAssistantSuggestion[]
-}
-
-export interface ResumeAssistantAdviceResult {
-  advice: ResumeAssistantAdviceItem[]
+  riskLevel?: 'low' | 'medium' | 'high'
+  evidenceState?: 'provided' | 'inferred' | 'needs_user_input'
+  requiresConfirmation?: boolean
+  evidenceNote?: string
+  patchType?: 'replace' | 'rewrite' | 'insert' | 'delete'
 }
 
 export interface ResumeAdviceApplyResult {
   applyItems: ResumeAssistantApplyItem[]
 }
-
-export type ResumeAssistantTabKey = 'examples' | 'advice' | 'materials'

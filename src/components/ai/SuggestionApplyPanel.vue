@@ -46,12 +46,14 @@ const stats = computed(() => {
   const total = props.items.length
   const applied = props.items.filter(i => i.applied).length
   const pending = total - applied
+  const confirmRequired = props.items.filter(i => !i.applied && i.requiresConfirmation).length
   const bySeverity = {
     high: props.items.filter(i => i.severity === 'high' && !i.applied).length,
     medium: props.items.filter(i => i.severity === 'medium' && !i.applied).length,
     low: props.items.filter(i => i.severity === 'low' && !i.applied).length,
   }
-  return { total, applied, pending, bySeverity }
+  const autoApplicable = props.items.filter(i => !i.applied && !i.requiresConfirmation && i.riskLevel !== 'high').length
+  return { total, applied, pending, confirmRequired, autoApplicable, bySeverity }
 })
 
 function applyItem(item: ResumeAssistantApplyItem) {
@@ -72,6 +74,22 @@ function getSeverityColor(severity?: string) {
     case 'medium': return 'var(--accent-orange)'
     case 'low': return 'var(--accent-blue-500)'
     default: return 'var(--text-muted)'
+  }
+}
+
+function getRiskLabel(item: ResumeAssistantApplyItem) {
+  if (item.requiresConfirmation || item.evidenceState === 'needs_user_input') return '需确认'
+  if (item.riskLevel === 'high') return '高风险'
+  if (item.evidenceState === 'inferred') return '轻推断'
+  return '有证据'
+}
+
+function getEvidenceLabel(state?: string) {
+  switch (state) {
+    case 'provided': return '原文证据'
+    case 'inferred': return '上下文推断'
+    case 'needs_user_input': return '等待确认'
+    default: return '原文证据'
   }
 }
 
@@ -98,9 +116,10 @@ function getCategoryIcon(category?: string) {
           v-if="stats.pending > 0"
           type="button"
           class="apply-all-btn"
+          :disabled="stats.autoApplicable === 0"
           @click="applyAll"
         >
-          全部应用 ({{ stats.pending }})
+          全部应用 ({{ stats.autoApplicable }})
         </button>
         <button
           type="button"
@@ -170,6 +189,15 @@ function getCategoryIcon(category?: string) {
             >
               {{ item.severity === 'high' ? '高' : item.severity === 'medium' ? '中' : '低' }}
             </span>
+            <span
+              class="risk-badge"
+              :class="{
+                warning: item.requiresConfirmation || item.riskLevel === 'high',
+                inferred: item.evidenceState === 'inferred',
+              }"
+            >
+              {{ getRiskLabel(item) }}
+            </span>
           </div>
           <button
             type="button"
@@ -189,6 +217,13 @@ function getCategoryIcon(category?: string) {
           <div class="reason-section">
             <span class="reason-label">💡 原因：</span>
             <p class="reason-text">{{ item.reason }}</p>
+          </div>
+
+          <div class="evidence-section">
+            <span class="evidence-label">{{ getEvidenceLabel(item.evidenceState) }}</span>
+            <p class="evidence-text">
+              {{ item.evidenceNote || (item.requiresConfirmation ? '这条修改涉及事实增强，应用前请确认内容真实。' : '这条修改基于当前原文内容。') }}
+            </p>
           </div>
         </div>
 
@@ -278,6 +313,11 @@ function getCategoryIcon(category?: string) {
 
 .apply-all-btn:hover {
   background: var(--accent-green-dark, #1a8f5a);
+}
+
+.apply-all-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .refresh-btn {
@@ -448,6 +488,25 @@ function getCategoryIcon(category?: string) {
   text-transform: uppercase;
 }
 
+.risk-badge {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-green) 12%, var(--bg-card));
+  color: var(--accent-green);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.risk-badge.warning {
+  background: color-mix(in srgb, var(--accent-red) 10%, var(--bg-card));
+  color: var(--accent-red);
+}
+
+.risk-badge.inferred {
+  background: color-mix(in srgb, var(--accent-orange) 10%, var(--bg-card));
+  color: var(--accent-orange);
+}
+
 .dismiss-btn {
   padding: 4px 8px;
   background: transparent;
@@ -487,6 +546,30 @@ function getCategoryIcon(category?: string) {
   font-size: 13px;
   line-height: 1.5;
   color: var(--text-primary);
+}
+
+.evidence-section {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.evidence-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.evidence-text {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
 }
 
 .card-actions {

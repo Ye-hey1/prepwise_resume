@@ -3,7 +3,13 @@ import { ref, computed } from 'vue'
 import { useAiConfigStore } from '@/stores/aiConfig'
 import { useJdAnalysisStore } from '@/stores/jdAnalysis'
 import { useQuestionBankStore } from '@/stores/questionBank'
-import { generateInterviewBank, generateFollowUpQuestions, generateQuestionInsightBase, generateQuestionSampleAnswer } from '@/services/jd/interviewBank'
+import {
+  generateInterviewBank,
+  generateFollowUpQuestions,
+  generateQuestionInsightBase,
+  generateQuestionSampleAnswer,
+  normalizeSampleAnswerText,
+} from '@/services/jd/interviewBank'
 import type { InterviewQuestion, FollowUpQuestion } from '@/services/jd/interviewBank'
 import type { JDData, JDMatchResult, CompanyIntelData } from '@/services/types/jd'
 
@@ -87,6 +93,11 @@ const activeQuestionIndex = computed(() => {
 })
 
 const activeQuestionFollowUps = computed<FollowUpQuestion[]>(() => activeQuestion.value?.followUps ?? [])
+const activeSampleAnswerText = computed(() =>
+  activeQuestion.value?.sampleAnswer
+    ? normalizeSampleAnswerText(activeQuestion.value.sampleAnswer)
+    : '',
+)
 
 async function selectQuestion(id: string) {
   activeQuestionId.value = id
@@ -119,7 +130,7 @@ async function handleCollectQuestion() {
     content: q.question,
     category: q.category,
     tags: q.followUpHints || [],
-    reference_answer: q.sampleAnswer || q.answerStructure || '',
+    reference_answer: normalizeSampleAnswerText(q.sampleAnswer || q.answerStructure || ''),
     user_notes: q.context || '',
     source: 'JD深挖题',
     difficulty: q.difficulty === '高级' ? 5 : q.difficulty === '中级' ? 3 : 1,
@@ -144,7 +155,7 @@ async function handleCollectAll() {
     content: q.question,
     category: q.category,
     tags: q.followUpHints || [],
-    reference_answer: q.sampleAnswer || q.answerStructure || '',
+    reference_answer: normalizeSampleAnswerText(q.sampleAnswer || q.answerStructure || ''),
     user_notes: q.context || '',
     source: 'JD深挖题',
     difficulty: q.difficulty === '高级' ? 5 : q.difficulty === '中级' ? 3 : 1,
@@ -174,7 +185,7 @@ async function handleGenerateSampleAnswer(question: InterviewQuestion) {
       props.jdData,
       props.resumeText
     )
-    question.sampleAnswer = answer
+    question.sampleAnswer = normalizeSampleAnswerText(answer)
   } catch (err: any) {
     errorMsg.value = err?.message || '生成参考答案失败喵'
   } finally {
@@ -416,11 +427,11 @@ const categoryIcon: Record<string, string> = {
               <div class="content-block answer-block">
                 <h4 class="block-title"><span class="icon">✨</span> 参考回答</h4>
                 
-                <div v-if="activeQuestion.sampleAnswer" class="answer-ready-area">
+                <div v-if="activeSampleAnswerText" class="answer-ready-area">
                   <details open class="ref-details">
                     <summary class="ref-summary">查看 AI 推荐口径</summary>
                     <div class="ref-content-p">
-                      <p class="block-text answer-text">{{ activeQuestion.sampleAnswer }}</p>
+                      <p class="block-text answer-text">{{ activeSampleAnswerText }}</p>
                     </div>
                   </details>
                 </div>

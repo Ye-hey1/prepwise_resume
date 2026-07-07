@@ -55,3 +55,31 @@ export function recencyWeight(postedAt?: string): number {
   const days = (Date.now() - new Date(postedAt).getTime()) / (1000 * 60 * 60 * 24)
   return Math.max(0.1, 1 - days / 730) // 线性衰减
 }
+
+// ponytail: 3 个 connector 原各有一份逐字相同的 fetchWithCache/fetchWithRetry + 独立 cache，已合并为共享实现。
+const textCache = new Map<string, { data: string; timestamp: number }>()
+const TEXT_CACHE_TTL = 30 * 60 * 1000 // 30 分钟
+
+/** 带内存缓存和指数退避重试的文本抓取（github/nowcoder/web connector 共用） */
+export async function fetchTextWithCache(url: string): Promise<string> {
+  const cached = textCache.get(url)
+  if (cached && Date.now() - cached.timestamp < TEXT_CACHE_TTL) {
+    return cached.data
+  }
+
+  for (let i = 0; i < 3; i++) {
+    try {
+      const response = await fetch(url)
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
+      const content = await response.text()
+      textCache.set(url, { data: content, timestamp: Date.now() })
+      return content
+    } catch (err) {
+      if (i === 2) throw err
+      await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)))
+    }
+  }
+  throw new Error('Max retries exceeded')
+}

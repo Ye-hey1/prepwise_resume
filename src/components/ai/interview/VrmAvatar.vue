@@ -20,6 +20,8 @@ import { ALL_VRM_MODELS } from '@/config/vrmModels'
 type AvatarBodyAction = VrmBodyAction
 type AvatarExpressionKey =
   | 'blink'
+  | 'blinkLeft'
+  | 'blinkRight'
   | 'lookLeft'
   | 'lookRight'
   | 'lookUp'
@@ -109,9 +111,12 @@ let nextAmbientActionAt = 0
 let expressionTransitionMs = 220
 let blinkWeightTarget = 0
 let blinkNextAt = 0
+let blinkStartAt = 0
+let blinkClosedAt = 0
+let blinkOpenAt = 0
 let blinkEndAt = 0
 
-// 交互式鼠标追踪
+// 鼠标追踪只用于悬浮 Agent；面试场景需要稳定正视镜头。
 const targetMouseX = ref(0)
 const targetMouseY = ref(0)
 const directiveEyeX = ref(0)
@@ -121,20 +126,13 @@ let currentMouseX = 0
 let currentMouseY = 0
 
 function handleMouseMove(e: MouseEvent) {
-  // 全局鼠标追踪，让虚拟形象的视线总是跟随用户鼠标，增加灵动交互性
-  if (props.variant === 'floating-agent' && containerRef.value) {
-    const rect = containerRef.value.getBoundingClientRect()
-    const headX = rect.left + rect.width * 0.5
-    const headY = rect.top + rect.height * 0.31
-    targetMouseX.value = clampRange((e.clientX - headX) / Math.max(90, rect.width * 0.62), -1, 1)
-    targetMouseY.value = clampRange((headY - e.clientY) / Math.max(100, rect.height * 0.54), -1, 1)
-    return
-  }
+  if (props.variant !== 'floating-agent' || !containerRef.value) return
 
-  const x = (e.clientX / window.innerWidth) * 2 - 1
-  const y = -(e.clientY / window.innerHeight) * 2 + 1
-  targetMouseX.value = x
-  targetMouseY.value = y
+  const rect = containerRef.value.getBoundingClientRect()
+  const headX = rect.left + rect.width * 0.5
+  const headY = rect.top + rect.height * 0.31
+  targetMouseX.value = clampRange((e.clientX - headX) / Math.max(90, rect.width * 0.62), -1, 1)
+  targetMouseY.value = clampRange((headY - e.clientY) / Math.max(100, rect.height * 0.54), -1, 1)
 }
 
 // ═══ 诊断：记录模型骨骼信息 ═══
@@ -213,10 +211,22 @@ function lerp(current: number, target: number, factor: number): number {
   return current + (target - current) * factor
 }
 
+function easeOutCubic(value: number): number {
+  const t = clampRange(value, 0, 1)
+  return 1 - Math.pow(1 - t, 3)
+}
+
+function easeInOutCubic(value: number): number {
+  const t = clampRange(value, 0, 1)
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+}
+
 function expressionAliases(name: string): string[] {
   const normalized = name.trim()
   const map: Record<string, string[]> = {
     blink: ['blink'],
+    blinkLeft: ['blinkLeft'],
+    blinkRight: ['blinkRight'],
     lookLeft: ['lookLeft'],
     lookRight: ['lookRight'],
     lookUp: ['lookUp'],
@@ -271,14 +281,33 @@ function resetExpressionState() {
 }
 
 function scheduleNextBlink(now: number) {
-  blinkNextAt = now + 2.4 + Math.random() * 3.2
+  blinkNextAt = now + 2.2 + Math.random() * 2.6
+  blinkStartAt = 0
+  blinkClosedAt = 0
+  blinkOpenAt = 0
   blinkEndAt = 0
+  blinkWeightTarget = 0
+}
+
+function beginBlink(now: number) {
+  blinkStartAt = now
+  blinkClosedAt = now + 0.035 + Math.random() * 0.018
+  blinkOpenAt = blinkClosedAt + 0.026 + Math.random() * 0.026
+  blinkEndAt = blinkOpenAt + 0.09 + Math.random() * 0.035
 }
 
 function updateBlinkTarget(now: number) {
   if (blinkEndAt > 0) {
-    if (now < blinkEndAt) {
+    if (now < blinkClosedAt) {
+      blinkWeightTarget = easeOutCubic((now - blinkStartAt) / Math.max(0.001, blinkClosedAt - blinkStartAt))
+      return
+    }
+    if (now < blinkOpenAt) {
       blinkWeightTarget = 1
+      return
+    }
+    if (now < blinkEndAt) {
+      blinkWeightTarget = 1 - easeInOutCubic((now - blinkOpenAt) / Math.max(0.001, blinkEndAt - blinkOpenAt))
       return
     }
     blinkEndAt = 0
@@ -287,23 +316,40 @@ function updateBlinkTarget(now: number) {
     return
   }
   if (now >= blinkNextAt) {
-    blinkWeightTarget = 1
-    blinkEndAt = now + 0.08 + Math.random() * 0.08
+    beginBlink(now)
   }
+}
+
+function blinkExpressionNames(): string[] {
+  if (supportedExpressionNames.size === 0 || supportedExpressionNames.has('blink')) return ['blink']
+  const sideBlinks = ['blinkLeft', 'blinkRight'].filter(name => supportedExpressionNames.has(name))
+  return sideBlinks.length > 0 ? sideBlinks : ['blink']
 }
 
 function updateExpressionWeights(delta: number, now: number) {
   if (!vrm?.expressionManager) return
   updateBlinkTarget(now)
-  setExpressionTarget('blink', blinkWeightTarget)
+  const blinkNames = new Set(blinkExpressionNames())
+  const directedBlink = [...blinkNames].reduce((max, name) => Math.max(
+    max,
+    persistentExpressionWeights.get(name) ?? 0,
+    targetExpressionWeights.get(name) ?? 0,
+  ), 0)
+  const blinkWeight = Math.max(blinkWeightTarget, directedBlink)
+
   const factor = 1 - Math.exp(-delta / Math.max(0.001, expressionTransitionMs / 1000))
   const names = new Set([...currentExpressionWeights.keys(), ...persistentExpressionWeights.keys(), ...targetExpressionWeights.keys()])
   for (const name of names) {
+    if (blinkNames.has(name)) continue
     const current = currentExpressionWeights.get(name) ?? 0
     const target = Math.max(persistentExpressionWeights.get(name) ?? 0, targetExpressionWeights.get(name) ?? 0)
     const next = lerp(current, target, factor)
     currentExpressionWeights.set(name, next)
     vrm.expressionManager.setValue(name, next < 0.001 ? 0 : next)
+  }
+  for (const name of blinkNames) {
+    currentExpressionWeights.set(name, blinkWeight)
+    vrm.expressionManager.setValue(name, blinkWeight < 0.001 ? 0 : blinkWeight)
   }
 }
 
@@ -385,12 +431,18 @@ function animate() {
     })
   }
 
-  // ═══ 平滑更新视线追踪参数：外部指令优先，否则跟随鼠标位置，避免两个目标互相抵消 ═══
-  const desiredLookX = hasDirectiveEyeTarget.value ? directiveEyeX.value : targetMouseX.value
-  const desiredLookY = hasDirectiveEyeTarget.value ? directiveEyeY.value : targetMouseY.value
-  const lookResponse = props.variant === 'floating-agent' ? 0.38 : 0.1
-  currentMouseX += (desiredLookX - currentMouseX) * lookResponse
-  currentMouseY += (desiredLookY - currentMouseY) * lookResponse
+  // ═══ 平滑更新视线参数：面试场景默认正视镜头，只响应显式动作指令；悬浮 Agent 才跟随鼠标。═══
+  const mouseLookEnabled = props.variant === 'floating-agent'
+  const desiredLookX = hasDirectiveEyeTarget.value ? directiveEyeX.value : mouseLookEnabled ? targetMouseX.value : 0
+  const desiredLookY = hasDirectiveEyeTarget.value ? directiveEyeY.value : mouseLookEnabled ? targetMouseY.value : 0
+  if (!hasDirectiveEyeTarget.value && !mouseLookEnabled) {
+    currentMouseX = 0
+    currentMouseY = 0
+  } else {
+    const lookResponse = mouseLookEnabled ? 0.38 : 0.16
+    currentMouseX += (desiredLookX - currentMouseX) * lookResponse
+    currentMouseY += (desiredLookY - currentMouseY) * lookResponse
+  }
   updateImplicitBodyAction(t)
   const motionFrame = proceduralMotion.update({
     delta,
@@ -458,7 +510,7 @@ async function loadModel(url: string) {
     for (const expression of result.vrm.expressionManager?.expressions ?? []) {
       if (expression.name) supportedExpressionNames.add(expression.name)
     }
-    for (const preset of ['aa', 'ih', 'ou', 'ee', 'oh', 'blink', 'happy', 'angry', 'sad', 'surprised', 'relaxed', 'lookLeft', 'lookRight', 'lookUp', 'lookDown']) {
+    for (const preset of ['aa', 'ih', 'ou', 'ee', 'oh', 'blink', 'blinkLeft', 'blinkRight', 'happy', 'angry', 'sad', 'surprised', 'relaxed', 'lookLeft', 'lookRight', 'lookUp', 'lookDown']) {
       if (result.vrm.expressionManager?.getExpression(preset)) supportedExpressionNames.add(preset)
     }
     proceduralMotion.reset()
@@ -642,7 +694,7 @@ onMounted(async () => {
   }
 
   window.addEventListener('resize', handleResize)
-  window.addEventListener('mousemove', handleMouseMove)
+  if (props.variant === 'floating-agent') window.addEventListener('mousemove', handleMouseMove)
 
   if (props.modelUrl) await loadModel(props.modelUrl)
 })

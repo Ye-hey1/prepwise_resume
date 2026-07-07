@@ -216,7 +216,6 @@ function persistDeliveryPackage(row: TrackerRow, patch: ApplicationTrackerPatch 
     channel: row.tracker.channel || 'Boss 直聘',
     jobUrl: row.deliveryPackage.searchUrl,
     greeting: row.deliveryPackage.greeting,
-    lastDeliveryPackageAt: new Date().toISOString(),
     ...patch,
   })
 }

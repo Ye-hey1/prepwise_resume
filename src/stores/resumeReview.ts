@@ -415,6 +415,27 @@ export const useResumeReviewStore = defineStore('resumeReview', () => {
     activeReviewId.value = item.id
   }
 
+  function deleteReview(id: string) {
+    history.value = history.value.filter((entry) => entry.id !== id)
+    // 删除的是当前激活项时，切到最新的历史项；没有历史则清空
+    if (activeReviewId.value === id) {
+      const next = history.value[0]
+      if (next) {
+        latestResult.value = next.result
+        activeReviewId.value = next.id
+      } else {
+        latestResult.value = null
+        activeReviewId.value = ''
+      }
+    }
+  }
+
+  function clearHistory() {
+    history.value = []
+    latestResult.value = null
+    activeReviewId.value = ''
+  }
+
   function clearError() {
     errorMsg.value = ''
   }
@@ -440,6 +461,8 @@ export const useResumeReviewStore = defineStore('resumeReview', () => {
     setError,
     saveResult,
     openHistoryItem,
+    deleteReview,
+    clearHistory,
     clearError,
   }
 })

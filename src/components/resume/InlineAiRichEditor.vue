@@ -1,27 +1,18 @@
 <script setup lang="ts">
 import RichEditor from '@/components/common/RichEditor.vue'
 import AiInlineActions from '@/components/resume/AiInlineActions.vue'
-import ResumeAssistantPanel from '@/components/resume/ResumeAssistantPanel.vue'
 import SuggestionApplyPanel from '@/components/ai/SuggestionApplyPanel.vue'
 import { optimizeField, parseAiResponse } from '@/services/aiService'
-import { getJdOptimizeContext, buildJdAwarePromptSuffix } from '@/services/jdAwareOptimize'
+import { getJdOptimizeContext } from '@/services/jdAwareOptimize'
 import { renderOptimizedApplyHtml, renderOptimizedPreviewHtml } from '@/services/aiOptimizeFormatter'
-import { getBuiltinResumeAssistantExamples } from '@/services/resumeAssistantBuiltin'
-import {
-  generateResumeAssistantAdvice,
-  generateResumeAssistantSuggestions,
-  generateResumeApplySuggestions,
-} from '@/services/resumeAssistantService'
+import { generateResumeApplySuggestions } from '@/services/resumeAssistantService'
 import type {
-  ResumeAssistantAdviceItem,
   ResumeAssistantApplyItem,
-  ResumeAssistantExampleItem,
   ResumeFieldAiContext,
 } from '@/services/types/resumeAssistant'
 import { useAiConfigStore } from '@/stores/aiConfig'
-import { useResumeAssistantStore } from '@/stores/resumeAssistant'
 import { useOptimizeHistoryStore } from '@/stores/optimizeHistory'
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 
 const props = defineProps<{
   modelValue: string
@@ -36,30 +27,28 @@ const emit = defineEmits<{
 }>()
 
 const aiConfigStore = useAiConfigStore()
-const resumeAssistantStore = useResumeAssistantStore()
 const optimizeHistoryStore = useOptimizeHistoryStore()
 
 const isBusy = ref(false)
 const aiError = ref('')
 const optimizeSuggestions = ref('')
 const optimizedContent = ref('')
-const assistantExamples = ref<ResumeAssistantExampleItem[]>([])
-const assistantAdvice = ref<ResumeAssistantAdviceItem[]>([])
-const assistantPanelVisible = ref(false)
-const assistantAnchorEl = ref<HTMLElement | null>(null)
-const assistBtnRef = ref<HTMLElement | null>(null)
 
 // 逐条应用相关状态
 const applyPanelVisible = ref(false)
 const applyItems = ref<ResumeAssistantApplyItem[]>([])
 const applyPanelBusy = ref(false)
 const applyPanelError = ref('')
+const applyPanelRef = ref<HTMLElement | null>(null)
 
 const canOptimize = computed(() => props.modelValue.replace(/<[^>]+>/g, '').trim().length > 0)
 const isEmptyField = computed(() => !canOptimize.value)
 const optimizedContentHtml = computed(() => renderOptimizedPreviewHtml(props.context, optimizedContent.value))
-const assistantMaterials = computed(() => resumeAssistantStore.getMaterialsByModule(props.context.moduleKey))
 const hasInlineOptimizeResult = computed(() => Boolean(isBusy.value || aiError.value || optimizeSuggestions.value || optimizedContent.value))
+const applyButtonLabel = computed(() => {
+  if (applyPanelBusy.value) return '分析中...'
+  return applyPanelVisible.value ? '收起逐条' : '逐条优化'
+})
 
 /** 字数统计 */
 const wordCount = computed(() => {
@@ -95,11 +84,6 @@ watch(() => props.context, () => {
   aiError.value = ''
   optimizeSuggestions.value = ''
   optimizedContent.value = ''
-  assistantPanelVisible.value = false
-  assistantAnchorEl.value = null
-  // 切换模块时才清空助手数据，保留同模块上次状态
-  assistantAdvice.value = []
-  assistantExamples.value = []
 }, { deep: true })
 
 function updateValue(value: string) {
@@ -134,17 +118,9 @@ function applyOptimizedContent(rawText: string, mode: 'replace' | 'append') {
   updateValue(`${current}${separator}${nextHtml}`)
 }
 
-function applyAssistantText(text: string, mode: 'replace' | 'append') {
-  applyOptimizedContent(text, mode)
-}
-
 function resetOptimizePanel() {
   optimizeSuggestions.value = ''
   optimizedContent.value = ''
-}
-
-function bootstrapBuiltinExamples() {
-  assistantExamples.value = getBuiltinResumeAssistantExamples(props.context.moduleKey)
 }
 
 async function handleOptimize() {
@@ -159,7 +135,6 @@ async function handleOptimize() {
   isBusy.value = true
   aiError.value = ''
   resetOptimizePanel()
-  assistantPanelVisible.value = false
 
   const config = aiConfigStore.getConfigForFeature('resumeOptimize')
 
@@ -196,7 +171,6 @@ async function handleGenerate() {
   isBusy.value = true
   aiError.value = ''
   resetOptimizePanel()
-  assistantPanelVisible.value = false
 
   const config = aiConfigStore.getConfigForFeature('resumeOptimize')
   if (!config.apiToken) {
@@ -256,100 +230,12 @@ ${contextParts.join('\n') || '暂无额外信息'}
   }
 }
 
-async function refreshExamples() {
-  const config = aiConfigStore.getConfigForFeature('resumeOptimize')
-  isBusy.value = true
-  bootstrapBuiltinExamples()
-  try {
-    const result = await generateResumeAssistantSuggestions(config, props.context, {
-      onChunk: () => {},
-      onDone: () => {},
-      onError: (message) => {
-        aiError.value = message
-      },
-    })
-    const aiExamples: ResumeAssistantExampleItem[] = result.suggestions.map((item) => ({
-      id: item.id,
-      moduleKey: props.context.moduleKey,
-      text: item.text,
-      tags: [item.tone, item.highlight].filter(Boolean) as string[],
-      source: 'ai',
-      tone: item.tone,
-      highlight: item.highlight,
-    }))
-    assistantExamples.value = [...getBuiltinResumeAssistantExamples(props.context.moduleKey), ...aiExamples]
-  } catch {
-    bootstrapBuiltinExamples()
-  } finally {
-    isBusy.value = false
-  }
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-async function refreshAdvice() {
-  const config = aiConfigStore.getConfigForFeature('resumeOptimize')
-  isBusy.value = true
-  try {
-    const result = await generateResumeAssistantAdvice(config, props.context, {
-      onChunk: () => {},
-      onDone: () => {},
-      onError: (message) => {
-        aiError.value = message
-      },
-    })
-    assistantAdvice.value = result.advice
-    if (result.advice.length === 0 && !aiError.value) {
-      aiError.value = '暂未生成可用建议，请稍后重试。'
-    }
-  } catch {
-    // 错误文案已由 service 设置
-  } finally {
-    isBusy.value = false
-  }
-}
-
-async function handleAssist(anchorEl: HTMLElement | null) {
-  if (isBusy.value) return
-  assistantAnchorEl.value = anchorEl
-  aiError.value = ''
-  resetOptimizePanel()
-  assistantPanelVisible.value = true
-
-  // 首次打开时自动加载内置例句
-  if (assistantExamples.value.length === 0) {
-    bootstrapBuiltinExamples()
-  }
-
-  // 自动生成 AI 建议（如果有配置且尚未生成）
-  if (assistantAdvice.value.length === 0) {
-    const config = aiConfigStore.getConfigForFeature('resumeOptimize')
-    if (config.apiToken) {
-      refreshAdvice()
-    }
-  }
-}
-
-function handleSaveMaterial() {
-  const saved = resumeAssistantStore.saveMaterialFromContext({
-    ...props.context,
-    currentText: props.modelValue,
-  })
-  if (!saved) {
-    aiError.value = '当前内容为空，暂时无法保存为素材。'
-    return
-  }
-  aiError.value = ''
-}
-
-function handleRemoveMaterial(id: string) {
-  resumeAssistantStore.removeMaterial(id)
-}
-
-async function copySuggestion(text: string) {
-  try {
-    await navigator.clipboard.writeText(text)
-  } catch {
-    aiError.value = '复制失败，请手动复制内容。'
-  }
+function textToHtml(text: string): string {
+  return renderOptimizedApplyHtml(props.context, text, props.modelValue) || text
 }
 
 // 逐条应用相关函数
@@ -357,6 +243,14 @@ async function refreshApplyItems() {
   const config = aiConfigStore.getConfigForFeature('resumeOptimize')
   applyPanelBusy.value = true
   applyPanelError.value = ''
+  applyItems.value = []
+
+  if (!config.apiUrl || !config.modelName) {
+    applyPanelError.value = '请先在 AI 设置中配置简历优化可用的模型渠道。'
+    applyPanelBusy.value = false
+    return
+  }
+
   try {
     const result = await generateResumeApplySuggestions(config, props.context, {
       onChunk: () => {},
@@ -369,8 +263,10 @@ async function refreshApplyItems() {
     if (result.applyItems.length === 0 && !applyPanelError.value) {
       applyPanelError.value = '当前内容很好，暂无优化建议。'
     }
-  } catch {
-    // 错误已由 service 设置
+  } catch (err) {
+    if (!applyPanelError.value) {
+      applyPanelError.value = err instanceof Error ? err.message : '逐条优化失败，请稍后重试。'
+    }
   } finally {
     applyPanelBusy.value = false
   }
@@ -382,15 +278,33 @@ function applySingleItem(item: ResumeAssistantApplyItem) {
   const plainCurrent = currentText.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ')
   const plainOriginal = item.original.replace(/\s+/g, ' ').trim()
   const plainSuggested = item.suggested.trim()
+  const suggestedHtml = textToHtml(plainSuggested)
 
   // 尝试精确匹配替换
   let replaced = false
   let newText = currentText
 
-  // 方法1: 纯文本匹配
-  if (plainCurrent.includes(plainOriginal)) {
-    const before = plainCurrent.indexOf(plainOriginal)
-    // 简单替换（适用于纯文本内容）
+  if (currentText.includes(item.original)) {
+    newText = currentText.replace(item.original, suggestedHtml)
+    replaced = true
+  }
+
+  if (!replaced && currentText.includes(plainOriginal)) {
+    newText = currentText.replace(plainOriginal, suggestedHtml)
+    replaced = true
+  }
+
+  if (!replaced) {
+    const htmlFriendlyPattern = escapeRegExp(plainOriginal)
+      .replace(/\\ /g, '(?:\\s|&nbsp;|<br\\s*\\/?>(?:\\s)*)+')
+    const matcher = new RegExp(htmlFriendlyPattern)
+    if (matcher.test(currentText)) {
+      newText = currentText.replace(matcher, suggestedHtml)
+      replaced = true
+    }
+  }
+
+  if (!replaced && plainCurrent.includes(plainOriginal)) {
     newText = plainCurrent.replace(plainOriginal, plainSuggested)
     replaced = true
   }
@@ -407,7 +321,7 @@ function applySingleItem(item: ResumeAssistantApplyItem) {
 
 function applyAllItems() {
   for (const item of applyItems.value) {
-    if (!item.applied) {
+    if (!item.applied && !item.requiresConfirmation && item.riskLevel !== 'high') {
       applySingleItem(item)
     }
   }
@@ -417,10 +331,20 @@ function dismissApplyItem(id: string) {
   applyItems.value = applyItems.value.filter(item => item.id !== id)
 }
 
-async function handleShowApplyPanel() {
-  applyPanelVisible.value = !applyPanelVisible
+async function handleShowApplyPanel(event?: Event) {
+  event?.preventDefault()
+  event?.stopPropagation()
+  if (applyPanelBusy.value) return
+
+  applyPanelVisible.value = !applyPanelVisible.value
+  applyPanelError.value = ''
+
   if (applyPanelVisible.value && applyItems.value.length === 0) {
+    await nextTick()
+    applyPanelRef.value?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
     await refreshApplyItems()
+    await nextTick()
+    applyPanelRef.value?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
   }
 }
 </script>
@@ -432,22 +356,19 @@ async function handleShowApplyPanel() {
       <div class="field-ai-actions">
         <button type="button" class="editor-ai-btn" :disabled="isBusy" @click.stop="handleOptimize">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 16.8l-6.2 4.5 2.4-7.4L2 9.4h7.6z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
-          {{ isBusy && !assistantPanelVisible ? '处理中...' : isEmptyField ? 'AI生成' : 'AI优化' }}
-        </button>
-        <button ref="assistBtnRef" type="button" class="editor-ai-btn ghost" :disabled="isBusy" @click.stop="handleAssist(assistBtnRef)">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M12 2a7 7 0 0 1 4 12.74V17a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-2.26A7 7 0 0 1 12 2zM9 21h6M10 17v4M14 17v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          简历助手
+          {{ isBusy ? '处理中...' : isEmptyField ? 'AI生成' : 'AI优化' }}
         </button>
         <button
           v-if="!isEmptyField"
           type="button"
           class="editor-ai-btn ghost"
           :class="{ active: applyPanelVisible }"
-          :disabled="isBusy"
-          @click.stop="handleShowApplyPanel"
+          :disabled="isBusy || applyPanelBusy"
+          @mousedown.prevent.stop="handleShowApplyPanel"
+          @click.prevent.stop
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          逐条优化
+          {{ applyButtonLabel }}
         </button>
       </div>
     </div>
@@ -460,39 +381,12 @@ async function handleShowApplyPanel() {
       <template #ai-panel>
         <AiInlineActions
           v-if="hasInlineOptimizeResult"
-          :busy="isBusy && !assistantPanelVisible"
-          :error="!assistantPanelVisible ? aiError : ''"
+          :busy="isBusy"
+          :error="aiError"
           :optimize-suggestions="optimizeSuggestions"
           :optimized-content="optimizedContent"
           :optimized-content-html="optimizedContentHtml"
           @apply-optimized="(mode) => applyOptimizedContent(optimizedContent, mode)"
-        />
-        <ResumeAssistantPanel
-          :visible="assistantPanelVisible"
-          :anchor-el="assistantAnchorEl"
-          :busy="isBusy"
-          :error="aiError"
-          :examples="assistantExamples"
-          :advice="assistantAdvice"
-          :materials="assistantMaterials"
-          @close="assistantPanelVisible = false"
-          @refresh-examples="refreshExamples"
-          @refresh-advice="refreshAdvice"
-          @save-material="handleSaveMaterial"
-          @apply-example="applyAssistantText"
-          @apply-material="applyAssistantText"
-          @copy-text="copySuggestion"
-          @remove-material="handleRemoveMaterial"
-        />
-        <SuggestionApplyPanel
-          v-if="applyPanelVisible"
-          :items="applyItems"
-          :busy="applyPanelBusy"
-          :error="applyPanelError"
-          @apply-item="applySingleItem"
-          @apply-all="applyAllItems"
-          @dismiss-item="dismissApplyItem"
-          @refresh="refreshApplyItems"
         />
       </template>
       <template #footer>
@@ -507,6 +401,17 @@ async function handleShowApplyPanel() {
         </div>
       </template>
     </RichEditor>
+    <div v-if="applyPanelVisible" ref="applyPanelRef" class="inline-apply-panel-wrap">
+      <SuggestionApplyPanel
+        :items="applyItems"
+        :busy="applyPanelBusy"
+        :error="applyPanelError"
+        @apply-item="applySingleItem"
+        @apply-all="applyAllItems"
+        @dismiss-item="dismissApplyItem"
+        @refresh="refreshApplyItems"
+      />
+    </div>
   </div>
 </template>
 
@@ -515,6 +420,19 @@ async function handleShowApplyPanel() {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.inline-apply-panel-wrap {
+  margin-top: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-card);
+  overflow: hidden;
+}
+
+.inline-apply-panel-wrap :deep(.suggestion-apply-panel) {
+  max-height: 520px;
+  border-radius: 0;
 }
 
 .field-label-row {

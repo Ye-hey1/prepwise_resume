@@ -1,5 +1,5 @@
 import type { AiConfig } from '@/services/stream'
-import { cleanJsonResponse, nonStreamAIRequest } from '@/services/stream'
+import { runJsonTask, type AiTaskIssue } from '@/services/aiTaskRuntime'
 import { buildResumeReviewPrompt, RESUME_REVIEW_SYSTEM_PROMPT } from './prompt'
 import { JD_FIT_RUBRIC, getRoleRubric, type RubricItem } from './rubrics'
 import type {
@@ -13,6 +13,46 @@ import type {
 } from './types'
 
 const REVIEW_PARSE_ERROR = 'AI 返回的简历审查数据格式异常，请重试。'
+
+const RESUME_REVIEW_SCHEMA_HINT = `{
+  "summary": string,
+  "generalCategories": [
+    {
+      "key": string,
+      "label": string,
+      "score": number,
+      "evidence": string,
+      "deductions": string,
+      "actionableAdvice": string,
+      "relatedModuleKey": string,
+      "missingHardRequirement": boolean
+    }
+  ],
+  "jdFitCategories": [
+    {
+      "key": string,
+      "label": string,
+      "score": number,
+      "evidence": string,
+      "deductions": string,
+      "actionableAdvice": string,
+      "relatedModuleKey": string,
+      "missingHardRequirement": boolean
+    }
+  ],
+  "tasks": [
+    {
+      "priority": "high|medium|low",
+      "title": string,
+      "reason": string,
+      "suggestion": string,
+      "relatedModuleKey": string,
+      "sourceCategoryKey": string,
+      "missingHardRequirement": boolean
+    }
+  ],
+  "fairnessNotes": string
+}`
 
 const MODULE_KEYS: ResumeReviewModuleKey[] = [
   'basicInfo',
@@ -253,22 +293,53 @@ export function normalizeReviewResult(raw: unknown, input: ResumeReviewInput): R
   }
 }
 
+function validateReviewResult(result: ResumeReviewResult): AiTaskIssue[] {
+  const issues: AiTaskIssue[] = []
+  const hasDetailedCategory = result.generalCategories.some((category) =>
+    category.evidence.trim() || category.deductions.trim() || category.actionableAdvice.trim()
+  )
+
+  if (!hasDetailedCategory && result.tasks.length === 0) {
+    issues.push({
+      path: 'generalCategories',
+      message: '审查结果缺少可执行证据、扣分说明和任务建议',
+      severity: 'error',
+    })
+  }
+
+  if (!result.fairnessNotes.trim()) {
+    issues.push({
+      path: 'fairnessNotes',
+      message: '公平性说明为空',
+      severity: 'warning',
+    })
+  }
+
+  return issues
+}
+
 export async function reviewResume(
   config: AiConfig,
   input: ResumeReviewInput,
   signal?: AbortSignal,
 ): Promise<ResumeReviewResult> {
-  const rawText = await nonStreamAIRequest(
-    config,
-    RESUME_REVIEW_SYSTEM_PROMPT,
-    buildResumeReviewPrompt(input),
-    { temperature: 0.2, maxTokens: 6000 },
-    signal,
-  )
-
   try {
-    return normalizeReviewResult(JSON.parse(cleanJsonResponse(rawText)), input)
-  } catch {
+    return await runJsonTask({
+      taskName: 'resumeReview.reviewResume',
+      category: 'resume-review',
+      config,
+      systemPrompt: RESUME_REVIEW_SYSTEM_PROMPT,
+      userMessage: buildResumeReviewPrompt(input),
+      normalize: raw => normalizeReviewResult(raw, input),
+      validate: validateReviewResult,
+      schemaHint: RESUME_REVIEW_SCHEMA_HINT,
+      requestOptions: { temperature: 0.2, maxTokens: 6000 },
+      signal,
+      repair: true,
+    })
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') throw error
+    if (error instanceof Error && /API 请求失败|AI 请求超时|请求已取消/.test(error.message)) throw error
     throw new Error(REVIEW_PARSE_ERROR)
   }
 }

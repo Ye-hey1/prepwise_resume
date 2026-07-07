@@ -14,7 +14,6 @@ export interface ApplicationTrackerItem {
   jobUrl: string
   resumeVersionId: string
   greeting: string
-  lastDeliveryPackageAt: string
   nextAction: string
   note: string
   appliedAt: string
@@ -62,7 +61,6 @@ function createDefaultTrackerItem(jdId: string): ApplicationTrackerItem {
     jobUrl: '',
     resumeVersionId: '',
     greeting: '',
-    lastDeliveryPackageAt: '',
     nextAction: '',
     note: '',
     appliedAt: '',
@@ -101,7 +99,6 @@ function normalizeTrackerItem(raw: unknown): ApplicationTrackerItem | null {
     jobUrl: typeof item.jobUrl === 'string' ? item.jobUrl : '',
     resumeVersionId: typeof item.resumeVersionId === 'string' ? item.resumeVersionId : '',
     greeting: typeof item.greeting === 'string' ? item.greeting : '',
-    lastDeliveryPackageAt: typeof item.lastDeliveryPackageAt === 'string' ? item.lastDeliveryPackageAt : '',
     nextAction: typeof item.nextAction === 'string' ? item.nextAction : '',
     note: typeof item.note === 'string' ? item.note : '',
     appliedAt: typeof item.appliedAt === 'string' ? item.appliedAt : '',
@@ -170,6 +167,17 @@ export const useApplicationTrackerStore = defineStore('applicationTracker', () =
     saveToStorage()
   }
 
+  /** 删除简历版本时，清理投递追踪里悬空的 resumeVersionId 引用 */
+  function clearResumeVersionRef(versionId: string) {
+    if (!versionId) return
+    const hasRef = items.value.some((item) => item.resumeVersionId === versionId)
+    if (!hasRef) return
+    items.value = items.value.map((item) =>
+      item.resumeVersionId === versionId ? { ...item, resumeVersionId: '' } : item,
+    )
+    saveToStorage()
+  }
+
   loadFromStorage()
 
   return {
@@ -178,5 +186,6 @@ export const useApplicationTrackerStore = defineStore('applicationTracker', () =
     getTrackerItem,
     upsertTrackerItem,
     removeTrackerItem,
+    clearResumeVersionRef,
   }
 })
